@@ -1,0 +1,17 @@
+backend/storage/
+backend/.env
+__pycache__/
+*.pyc
+.pytest_cache/
+frontend/node_modules/
+frontend/dist/
+# 密钥与本地配置（models.json 含明文 api_key，用 models.example.json 作模板）
+backend/models.json
+
+# 运行时/会话产物
+current_pid.txt
+.zcode/
+.commandcode/
+*.log
+.DS_Store
+Thumbs.db

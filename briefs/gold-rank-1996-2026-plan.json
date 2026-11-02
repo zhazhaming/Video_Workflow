@@ -1,0 +1,16 @@
+{
+  "topic": "国际金价排行榜：1996-2026 金价趋势变化",
+  "pid": "gold-rank-1996-2026",
+  "created": "2026-11-01",
+  "template": {
+    "mode": "from_scratch",
+    "reason": "选题为金融行情数据可视化（金价年度榜单竞速），与模板库内置的行星/宇宙/地球演化场景域（solar/nebula/accretion/ocean/volcano/ice/meteor/life/city 等）完全无关；按规则判不准时从严按『无关』处理，禁止注入 dv/* 的 scene、运镜/转场/字幕/调色/颗粒词表与星空氛围，也不复用任何旧占位图。",
+    "reusable": [
+      "基础设施（非创意元素）：Remotion 宿主工程 remotion-life-sim 及 Root.tsx 注册方式（与 llm-leaderboard / vibe-show 先例同模式，新增独立 composition，不改动模板文件）",
+      "基础设施：public/sfx/{riser,impact,whoosh}.wav 无版权音效（程序化生成，非模板词表）",
+      "基础设施：backend/tools/gen_bgm.py 的程序化合成思路（numpy 合成无版权 BGM），本片另写专用生成器以实现逐拍卡点",
+      "注：此前《金价砍价》项目（bgm_gold_haggle.mp3、gen_gold_infographics.py）为珠宝消费类脚本的信息图，与本片行情榜单题材无关，不复用其任何素材"
+    ],
+    "clean_check": "成片不出现行星/太阳系/星空/星云等元素；背景为深色行情终端 + 金色尘埃 + 烛式网格，全部为本片原创设计。"
+  }
+}
