@@ -7,9 +7,11 @@
 抓取原则：单个源失败只影响自己（上层逐源捕获），带浏览器 UA 与对应 Referer，
 超时从 config 读取，整体在 ThreadPoolExecutor 中并发执行。
 """
+import html as _html
 import json
 import logging
 import re
+from datetime import date, timedelta
 from urllib.parse import quote
 
 import httpx
@@ -37,6 +39,7 @@ SEARCH_URLS = {
     "bilibili": "https://search.bilibili.com/all?keyword={}",
     "weibo": "https://s.weibo.com/weibo?q={}",
     "xiaohongshu": "https://www.xiaohongshu.com/search_result?keyword={}",
+    "github": "https://github.com/search?q={}",
 }
 
 # 已接入的热榜源（platform id → 展示名）
@@ -46,6 +49,7 @@ PLATFORM_NAMES = {
     "baidu": "百度",
     "zhihu": "知乎",
     "bilibili": "B站",
+    "github": "GitHub",
 }
 # 反爬受限、待接入（前端展示"暂不可用"）
 PENDING_PLATFORMS = {"weibo": "微博"}
@@ -218,12 +222,109 @@ def fetch_bilibili(client: httpx.Client) -> list[dict]:
     return items
 
 
+# ---- GitHub Trending（工具分享栏目源）----
+
+
+def _fmt_stars(v: float | int | None) -> str:
+    """12345 → 12.3k；1234567 → 1.2M。"""
+    if not v:
+        return "0"
+    if v >= 1e6:
+        return f"{v / 1e6:.1f}M"
+    if v >= 1e3:
+        return f"{v / 1e3:.1f}k"
+    return str(int(v))
+
+
+def _parse_trending_html(html_text: str) -> list[dict]:
+    """解析 github.com/trending 页的 Box-row 结构；解析不出条目返回空（上层回退 API）。"""
+    items = []
+    for m in re.finditer(r'<article class="Box-row">(.*?)</article>', html_text, re.S):
+        block = m.group(1)
+        hm = re.search(r'<h2[^>]*>\s*<a[^>]+href="/([^"]+)"', block)
+        if not hm:
+            continue
+        full = hm.group(1).strip().strip("/")
+        dm = re.search(r'<p class="col-9[^"]*"[^>]*>(.*?)</p>', block, re.S)
+        desc = _html.unescape(re.sub(r"<[^>]+>", "", dm.group(1))).strip() if dm else ""
+        sm = re.search(r'stargazers".*?([\d][\d,\s]*)\s*<', block, re.S)
+        stars = int(sm.group(1).replace(",", "").replace(" ", "")) if sm else None
+        tm = re.search(r"([\d,]+)\s*stars?\s+(?:today|this week|this month)", block)
+        today = int(tm.group(1).replace(",", "")) if tm else None
+        lm = re.search(r'itemprop="programmingLanguage">([^<]+)<', block)
+        lang = lm.group(1).strip() if lm else ""
+        # 归一热度用「今日新增星」；没有则退回总星数
+        hot = float(today) if today else (float(stars) if stars else None)
+        parts = []
+        if stars:
+            parts.append(f"⭐{_fmt_stars(stars)}")
+        if today is not None:
+            parts.append(f"今日+{_fmt_stars(today)}")
+        items.append(
+            {
+                "title": full,
+                "url": f"https://github.com/{full}",
+                "hot": hot,
+                "raw_hot": " · ".join(parts),
+                "tag": lang,
+                "summary": desc,
+            }
+        )
+    return items
+
+
+def _github_api_fallback(client: httpx.Client) -> list[dict]:
+    """trending 页不可用时的兜底：近 7 天新建仓库按 star 排序（官方 Search API）。"""
+    since = (date.today() - timedelta(days=7)).isoformat()
+    url = (
+        "https://api.github.com/search/repositories"
+        f"?q=created%3A%3E{since}&sort=stars&order=desc&per_page=25"
+    )
+    r = client.get(url, headers={**_HEADERS, "Accept": "application/vnd.github+json"})
+    r.raise_for_status()
+    items = []
+    for it in r.json().get("items") or []:
+        full = (it.get("full_name") or "").strip()
+        if not full:
+            continue
+        stars = it.get("stargazers_count") or 0
+        items.append(
+            {
+                "title": full,
+                "url": it.get("html_url") or f"https://github.com/{full}",
+                "hot": None,  # 排名代理归一，避免与 trending 口径混算
+                "raw_hot": f"⭐{_fmt_stars(stars)}（近7天新建）",
+                "tag": str(it.get("language") or ""),
+                "summary": re.sub(r"\s+", " ", str(it.get("description") or "")),
+            }
+        )
+    return items
+
+
+def fetch_github(client: httpx.Client) -> list[dict]:
+    """GitHub 每日热门仓库：先解析 trending 页，解析不出再回退官方 Search API。"""
+    try:
+        r = client.get(
+            "https://github.com/trending",
+            headers={**_HEADERS, "Accept": "text/html", "Referer": "https://github.com/"},
+        )
+        r.raise_for_status()
+        items = _parse_trending_html(r.text)
+        if items:
+            return items
+        log.warning("github trending 页解析为空，回退 Search API")
+    except Exception as e:  # noqa: BLE001
+        log.warning("github trending 页抓取失败，回退 Search API: %s", e)
+    return _github_api_fallback(client)
+
+
 FETCHERS = {
     "douyin": fetch_douyin,
     "toutiao": fetch_toutiao,
     "baidu": fetch_baidu,
     "zhihu": fetch_zhihu,
     "bilibili": fetch_bilibili,
+    "github": fetch_github,
 }
 
 
@@ -276,15 +377,22 @@ def fetch_all(platforms: list[str] | None = None) -> dict[str, list[dict]]:
 
 
 def _fetch_one(platform: str) -> list[dict]:
-    with httpx.Client(timeout=HOTSPOT_TIMEOUT_SECONDS, follow_redirects=True, trust_env=False) as client:
+    # github 允许走系统代理（国内直连不稳定），国内平台保持不走代理
+    with httpx.Client(
+        timeout=HOTSPOT_TIMEOUT_SECONDS,
+        follow_redirects=True,
+        trust_env=platform == "github",
+    ) as client:
         raw = FETCHERS[platform](client)
-    # 通用清洗：截断超长标题、过滤空串
+    # 通用清洗：截断超长标题/摘要、过滤空串
     cleaned = []
     for it in raw:
         title = str(it.get("title", "")).strip()
         if not title:
             continue
         it["title"] = title[:80]
+        if it.get("summary"):
+            it["summary"] = str(it["summary"]).strip()[:200]
         cleaned.append(it)
     return cleaned
 

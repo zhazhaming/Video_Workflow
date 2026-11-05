@@ -14,7 +14,7 @@ from ..services import llm
 
 router = APIRouter(prefix="/api/hotspot", tags=["hotspot"])
 
-# 早报 AI 点评缓存（key = generated_at；热点刷新前复用，省 token）
+# 早报 AI 点评缓存（key = (generated_at, 栏目)；热点刷新前复用，省 token）
 _ai_briefing_cache: dict = {}
 
 
@@ -52,31 +52,74 @@ def status():
 
 
 @router.get("/briefing")
-def briefing(top_n: int = Query(default=5, ge=1, le=10)):
-    """今日早报：Top N 值得马上拍的热点 + 理由（打开页面 10 秒做决定）。"""
+def briefing(top_n: int = Query(default=hs.BRIEF_TOP_N, ge=1, le=hs.BRIEF_TOP_N)):
+    """今日早报：实时热点 + 科普知识 + 工具分享 三个栏目（规则生成，快、稳）。"""
     return hs.service.briefing(top_n)
 
 
 @router.post("/ai-briefing")
-def ai_briefing(top_n: int = Query(default=5, ge=1, le=10)):
+def ai_briefing(
+    top_n: int = Query(default=hs.BRIEF_TOP_N, ge=1, le=hs.BRIEF_TOP_N),
+    section: str = Query(default="hot", pattern="^(hot|science)$"),
+):
     """早报 AI 深度点评：每条热点给「适合形式/拍摄角度/风险提示」。
 
-    以最近一次早报的 generated_at 为缓存键，热点未刷新前重复请求直接返回。
+    section=hot 实时热点栏目；section=science 科普知识栏目。
+    以最近一次早报的 generated_at + 栏目为缓存键，热点未刷新前重复请求直接返回。
     """
     brief = hs.service.briefing(top_n)
+    if section == "science":
+        sec_items = brief.get("science", {}).get("items", [])
+        if not sec_items:
+            raise HTTPException(400, "当前没有命中科普频道的热点，稍后再试")
+    else:
+        sec_items = brief["items"]
+    cache_key = (brief["generated_at"], section)
     cache = _ai_briefing_cache
-    if cache.get("key") == brief["generated_at"]:
+    if cache.get("key") == cache_key:
         return {**brief, "comments": cache["comments"]}
     try:
-        comments = llm.generate_briefing_commentary(brief["items"], None)
+        comments = llm.generate_briefing_commentary(sec_items, None)
     except RuntimeError as e:
         raise HTTPException(503, str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"AI 点评生成失败：{e}")
     cache.clear()
-    cache["key"] = brief["generated_at"]
+    cache["key"] = cache_key
     cache["comments"] = comments
     return {**brief, "comments": comments}
+
+
+class AiToolsRequest(BaseModel):
+    model_id: str | None = None
+
+
+@router.post("/ai-tools")
+def ai_tools(req: AiToolsRequest):
+    """工具栏目 AI 解读：给 GitHub 热门仓库标注职场受众/用途/提效点。
+
+    结果按仓库名落盘缓存（tools_meta.json），同一仓库只花一次 token。
+    """
+    section = hs.service.tools_section(top_n=12)
+    pending = [t for t in section["items"] if not t.get("ai_done")]
+    if pending:
+        payload = [
+            {
+                "name": t["title"],
+                "language": t.get("language") or "",
+                "stars": t.get("stars") or "",
+                "description": t.get("summary") or "",
+            }
+            for t in pending
+        ]
+        try:
+            results = llm.generate_tool_meta(payload, req.model_id)
+        except RuntimeError as e:
+            raise HTTPException(503, str(e))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(502, f"AI 工具解读失败：{e}")
+        hs.service.merge_tools_meta(results)
+    return {"tools": hs.service.tools_section(top_n=10), "classified": len(pending)}
 
 
 @router.get("/items", response_model=list[hs.HotItem])
@@ -225,6 +268,26 @@ def update_topic(tid: str, req: TopicStatusRequest):
     if not t:
         raise HTTPException(404, "选题不存在")
     return t
+
+
+@router.post("/topics/{tid}/brief")
+def topic_brief(tid: str):
+    """选题 → 视频制作简报：喂给 video-producer skill（topic 阶段输入）的 JSON 契约。"""
+    t = next((x for x in hs.service.store.load_topics() if x.id == tid), None)
+    if not t:
+        raise HTTPException(404, "选题不存在")
+    return {
+        "topic": t.title,
+        "angle": t.angle,
+        "hook": t.hook,
+        "why": t.why,
+        "ref": t.ref,
+        "ref_platforms": t.ref_platforms,
+        "target_seconds": 60,
+        "tone": "按题材自选（tone-recipes）",
+        "facts_rule": "数字/年份/人名必须先取数（API 优先）；没有可靠来源的知识点直接弃用",
+        "next": "把本 JSON 发给 ZCode：按 .agents/skills/video-producer 六阶段流程制作",
+    }
 
 
 @router.delete("/topics/{tid}")

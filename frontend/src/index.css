@@ -614,6 +614,57 @@ code.mono {
   margin-left: auto;
 }
 
+/* 早报栏目 Tab（实时热点/科普/工具） */
+.brief-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.brief-tab {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 14px;
+  color: #c9d1d9;
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.brief-tab:hover { border-color: #58a6ff; }
+.brief-tab-active { background: #1f6feb33; border-color: #58a6ff; color: #fff; }
+
+.subtopic-badge {
+  font-size: 12px;
+  color: #d2a8ff;
+  border: 1px dashed #a371f755;
+  border-radius: 10px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+.tool-stars { font-size: 12px; color: #e3b341; white-space: nowrap; }
+
+.tool-lang {
+  font-size: 12px;
+  color: #8b949e;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+.aud-chip {
+  font-size: 12px;
+  color: #7ee787;
+  border: 1px solid #3fb95055;
+  background: #3fb95011;
+  border-radius: 10px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
 /* ---- 热点雷达 ---- */
 
 .radar-status {
@@ -778,6 +829,7 @@ code.mono {
 .pf-bilibili { color: #fb7299; border-color: #fb729955; background: #fb729911; }
 .pf-weibo { color: #e6162d; border-color: #e6162d55; background: #e6162d11; }
 .pf-xiaohongshu { color: #ff2442; border-color: #ff244255; background: #ff244211; }
+.pf-github { color: #a5b1bd; border-color: #a5b1bd55; background: #a5b1bd11; }
 
 .hot-main { flex: 1; min-width: 0; }
 
@@ -1510,3 +1562,213 @@ a.btn { text-decoration: none; display: inline-block; }
 }
 
 .flow-audio .field { margin-bottom: 10px; }
+
+/* ---- 热门歌曲（抖音热歌 / 音乐榜单聚合） ---- */
+
+.music-head-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 12px;
+  margin: 8px 0;
+}
+
+.music-board-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 14px 0 10px;
+}
+
+.music-board-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.music-board-row-label {
+  flex: 0 0 96px;
+  text-align: right;
+  font-size: 11px;
+  color: #8b949e;
+  white-space: nowrap;
+}
+
+.music-chip-new { border-style: dashed; color: #8b949e; }
+.music-chip-new:hover { color: #3fb950; border-color: #3fb95066; }
+
+.music-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 999px;
+  color: #c9d1d9;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.music-chip:hover { border-color: #58a6ff; color: #e6edf3; }
+.music-chip-active { border-color: #f0883e; color: #f0883e; font-weight: 600; }
+.music-chip-dead { opacity: 0.45; }
+
+.music-chip-count {
+  background: #21262d;
+  border-radius: 999px;
+  font-size: 10px;
+  padding: 0 6px;
+  color: #8b949e;
+}
+
+.music-chip-active .music-chip-count { color: #f0883e; }
+
+.music-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.music-toolbar .proj-search { flex: 0 1 280px; }
+
+.music-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.music-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.music-row:hover { border-color: #388bfd66; }
+
+.music-rank {
+  min-width: 30px;
+  text-align: right;
+  font-size: 15px;
+  font-weight: 700;
+  color: #8b949e;
+  font-variant-numeric: tabular-nums;
+}
+
+.music-rank.top { color: #f0883e; font-size: 17px; }
+
+.music-cover {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #21262d;
+  flex: none;
+}
+
+.music-cover-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #8b949e;
+  font-size: 16px;
+}
+
+.music-main { flex: 1; min-width: 0; }
+
+.music-title {
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.music-title a { color: #e6edf3; text-decoration: none; }
+.music-title a:hover { color: #58a6ff; }
+
+.music-sub {
+  font-size: 12px;
+  color: #8b949e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.music-trend {
+  flex: none;
+  width: 64px;
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.music-dur {
+  flex: none;
+  width: 42px;
+  text-align: right;
+  font-size: 12px;
+  color: #8b949e;
+  font-variant-numeric: tabular-nums;
+}
+
+.music-link {
+  flex: none;
+  font-size: 12px;
+  color: #58a6ff;
+  text-decoration: none;
+}
+
+.music-link:hover { text-decoration: underline; }
+
+@media (max-width: 720px) {
+  .music-dur, .music-link { display: none; }
+}
+
+.music-toast {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid #3fb95055;
+  border-radius: 8px;
+  background: #12261a;
+  color: #3fb950;
+  font-size: 13px;
+}
+
+.music-manual-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+}
+
+.music-manual-row .proj-search { flex: 0 1 300px; }
+.music-manual-row .muted { font-size: 12px; }
+
+.music-collect {
+  flex: none;
+  min-width: 60px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.music-collect:hover:not(:disabled) { border-color: #3fb95066; color: #3fb950; }
+.music-collect.collected { color: #3fb950; border-color: #3fb95066; }
+.music-collect:disabled { opacity: 0.4; cursor: not-allowed; }

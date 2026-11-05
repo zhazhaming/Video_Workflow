@@ -7,8 +7,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import ensure_dirs
-from .routers import bgm, flow, hotspot, projects, publish, scripts, tasks
+from .routers import bgm, flow, hotspot, music_chart, projects, publish, scripts, tasks
 from .services import hotspot as hotspot_service
+from .services import music_chart as music_chart_service
 
 app = FastAPI(title="video-workflow", version="0.1.0")
 
@@ -25,6 +26,7 @@ app.include_router(projects.router)
 app.include_router(tasks.router)
 app.include_router(bgm.router)
 app.include_router(hotspot.router)
+app.include_router(music_chart.router)
 app.include_router(publish.router)
 app.include_router(flow.router)
 
@@ -33,11 +35,13 @@ app.include_router(flow.router)
 def _startup():
     ensure_dirs()
     hotspot_service.service.startup()
+    music_chart_service.service.startup()
 
 
 @app.on_event("shutdown")
 def _shutdown():
     hotspot_service.service.shutdown()
+    music_chart_service.service.shutdown()
 
 
 @app.get("/api/health")

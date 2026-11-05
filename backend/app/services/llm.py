@@ -667,6 +667,41 @@ def generate_briefing_commentary(brief_items: list[dict], model_id: str | None) 
     return [c for c in comments if isinstance(c, dict) and c.get("ref")]
 
 
+TOOL_META_SYSTEM = """你是效率工具测评师，帮中国职场人（运营、行政、工程师、政府工作人员、产品经理、程序员、硬件工程师、老板、员工）挑提效工具。
+根据 GitHub 仓库信息，判断每个工具适合哪些职场人群、解决什么问题、提效点在哪。
+
+只输出 JSON，不输出任何其他文字：
+{"tools": [
+  {"ref": "原样返回仓库名（owner/repo）",
+   "audience": ["适合人群，从：程序员/产品经理/设计师/运营·自媒体/行政·办公/硬件工程师/老板·管理者/学生·研究者/政府·事业单位/全员通用 中选1~3个"],
+   "use": "一句话说明它是什么、解决什么问题（≤36字）",
+   "why": "提效点/为什么值得试（≤36字）"}
+]}
+
+规则：
+1. tools 数量必须等于输入数量，顺序一一对应，ref 原样返回
+2. use/why 必须基于仓库描述，英文描述翻译成中文大白话，不编造仓库里没有的功能
+3. 受众宁可保守：纯开发库不要硬塞给运营或行政
+4. 只输出 JSON"""
+
+
+def generate_tool_meta(tools: list[dict], model_id: str | None = None) -> list[dict]:
+    """为 GitHub 热门仓库逐个生成职场受众/用途/亮点解读。"""
+    lines = []
+    for i, t in enumerate(tools, start=1):
+        lines.append(
+            f"{i}. {t.get('name', '')}（语言：{t.get('language') or '未知'}；热度：{t.get('stars') or '无'}）\n"
+            f"   描述：{t.get('description') or '（无）'}"
+        )
+    user = "以下是 GitHub 今日热门仓库：\n" + "\n".join(lines) + "\n\n请逐个给出受众与提效解读。"
+    raw = _chat(model_id, user, temperature=0.4, system_prompt=TOOL_META_SYSTEM)
+    data = _extract_json(raw)
+    tools_out = data.get("tools", [])
+    if not isinstance(tools_out, list):
+        raise ValueError("模型返回的 tools 不是数组")
+    return [t for t in tools_out if isinstance(t, dict) and t.get("ref")]
+
+
 # ============ 六步流水线：搜索 → 编排 → 找图 → 定样式 → 检查 → 直出 ============
 
 RESEARCH_SYSTEM = """你是知识科普作者，最在意事实准确。

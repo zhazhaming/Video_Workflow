@@ -10,6 +10,9 @@ import type {
   HotItem,
   HotspotStatus,
   ModelInfo,
+  MusicBoardInfo,
+  MusicChartStatus,
+  MusicItem,
   ProjectDetail,
   ProjectMeta,
   ProjectSettings,
@@ -281,13 +284,26 @@ export const generateAiTopics = (
 
 // ---- 今日选题工作台 ----
 
-export const hotspotBriefing = (topN = 5) =>
+/** 早报每栏目展示条数（15 行，方便逐条筛选做内容）；与后端 BRIEF_TOP_N 保持一致 */
+export const BRIEF_TOP_N = 15;
+
+export const hotspotBriefing = (topN = BRIEF_TOP_N) =>
   request<Briefing>(`/api/hotspot/briefing?top_n=${topN}`);
 
-export const aiBriefing = (topN = 5) =>
-  request<Briefing & { comments: BriefingComment[] }>(`/api/hotspot/ai-briefing?top_n=${topN}`, {
+export const aiBriefing = (topN = BRIEF_TOP_N, section: "hot" | "science" = "hot") =>
+  request<Briefing & { comments: BriefingComment[] }>(
+    `/api/hotspot/ai-briefing?top_n=${topN}&section=${section}`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    }
+  );
+
+/** 工具栏目 AI 解读：GitHub 仓库标注职场受众/用途/提效点（后端按仓库缓存） */
+export const aiTools = (modelId?: string | null) =>
+  request<{ tools: Briefing["tools"]; classified: number }>("/api/hotspot/ai-tools", {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify({ model_id: modelId || null }),
   });
 
 export const listTopics = () => request<SavedTopic[]>("/api/hotspot/topics");
@@ -298,6 +314,10 @@ export const updateTopic = (id: string, patch: { status?: string; project_id?: s
     body: JSON.stringify(patch),
   });
 
+/** 选题 → 视频制作简报（喂给 video-producer skill） */
+export const topicBrief = (id: string) =>
+  request<Record<string, unknown>>(`/api/hotspot/topics/${id}/brief`, { method: "POST", body: JSON.stringify({}) });
+
 export const deleteTopic = (id: string) =>
   request<{ ok: boolean }>(`/api/hotspot/topics/${id}`, { method: "DELETE" });
 
@@ -306,6 +326,55 @@ export const clearTopics = (statuses: string[]) =>
     method: "POST",
     body: JSON.stringify({ statuses }),
   });
+
+// ---- 热门歌曲（抖音热歌 / 音乐榜单聚合） ----
+
+export const musicChartStatus = () => request<MusicChartStatus>("/api/music-chart/status");
+
+export const musicChartBoards = () => request<MusicBoardInfo[]>("/api/music-chart/boards");
+
+export const musicChartItems = (params: { board?: string; q?: string; sort?: string; limit?: number }) => {
+  const usp = new URLSearchParams();
+  if (params.board) usp.set("board", params.board);
+  if (params.q) usp.set("q", params.q);
+  usp.set("sort", params.sort || "rank");
+  usp.set("limit", String(params.limit ?? 300));
+  return request<MusicItem[]>(`/api/music-chart/items?${usp.toString()}`);
+};
+
+export const musicChartRefresh = (boards: string[] = []) =>
+  request<{ refreshed_at: string; items: number }>(
+    "/api/music-chart/refresh",
+    { method: "POST", body: JSON.stringify({ boards }) }
+  );
+
+export const musicChartExportUrl = (board?: string) =>
+  `/api/music-chart/export.csv${board ? `?board=${encodeURIComponent(board)}` : ""}`;
+
+// 自定义策展榜（我的榜单）
+export const createCustomBoard = (name: string, desc = "") =>
+  request<{ id: string; name: string; desc: string }>("/api/music-chart/custom-boards", {
+    method: "POST",
+    body: JSON.stringify({ name, desc }),
+  });
+
+export const deleteCustomBoard = (id: string) =>
+  request<{ ok: boolean }>(`/api/music-chart/custom-boards/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+export const addCustomItem = (
+  id: string,
+  item: { title: string; artist?: string; album?: string; cover?: string; url?: string; note?: string }
+) =>
+  request<{ board: { id: string; name: string }; added: boolean }>(
+    `/api/music-chart/custom-boards/${encodeURIComponent(id)}/items`,
+    { method: "POST", body: JSON.stringify(item) }
+  );
+
+export const removeCustomItem = (id: string, title: string, artist = "") =>
+  request<{ ok: boolean }>(
+    `/api/music-chart/custom-boards/${encodeURIComponent(id)}/items?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`,
+    { method: "DELETE" }
+  );
 
 // ---------- 发布 ----------
 export const getPublishPackage = (pid: string) =>

@@ -19,8 +19,8 @@ from app.services import beat
 
 SR = 44100
 TOTAL = 60.2
-BGM_DIR = Path(r"D:\Work\remotion-life-sim\public\bgm")
-SFX_DIR = Path(r"D:\Work\remotion-life-sim\public\sfx")
+BGM_DIR = Path(r"D:/work/Video_Workflow/remotion-engine\public\bgm")
+SFX_DIR = Path(r"D:/work/Video_Workflow/remotion-engine\public\sfx")
 SRC = BGM_DIR / "gold_race_bgm.mp3"
 OUT_WAV = BGM_DIR / "_market_race_bgm.wav"
 OUT_MP3 = BGM_DIR / "market_race_bgm.mp3"

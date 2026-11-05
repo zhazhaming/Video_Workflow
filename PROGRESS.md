@@ -479,3 +479,269 @@ remotion-life-sim/
   `/api/projects/e28e30a04e57/video` 返回 206 video/mp4；`cover.jpg` 已生成
 - 来源：Yahoo Finance（`000001.SS` / `^GSPC`）、BIS April-2025 tariff shock、
   上海市政府 2024-09-24 报道、IMF 2024 China equity rally 报告
+
+## 十六、2026-11-03 今日早报三栏目（实时热点 / 科普知识 / 工具分享）
+
+### 功能
+
+早报卡片从单一「实时热点」扩展为三个栏目 Tab（记忆上次所在栏目）：
+
+1. **🔥 实时热点**：原有逻辑，国内平台热点按第一波指数排序（GitHub 仓库不混入）。
+2. **🔬 科普知识**：当日全平台科普最火内容。内置科普子话题词表
+   （宇宙地球 / AI科技 / 财经知识 / 健康心理 / 历史人文 / 生活百科，覆盖地球起源、
+   AI 趋势、黄金股票走势、知识科普等），每次抓取自动归类，顶部展示子话题命中分布，
+   条目带子话题徽章 + 入选理由；可走 `ai-briefing?section=science` 逐条 AI 拍摄点评。
+3. **🧰 工具分享**：GitHub 每日热门仓库（解析 github.com/trending 页，
+   失败自动回退官方 Search API「近 7 天新建高星仓库」），展示星数 / 语言 / 简介 /
+   职场受众标签（启发式兜底 + `POST /api/hotspot/ai-tools` AI 解读：
+   受众 / 用途 / 提效点，按仓库名落盘 `tools_meta.json` 缓存，同一仓库只花一次 token）。
+   仓库同时进入热点主列表（平台筛选可选 GitHub），可正常「＋选题 / AI 选题」。
+
+### 代码改动
+
+1. `hotspot_sources.py`：`fetch_github`（trending 页解析 `_parse_trending_html` +
+   Search API 兜底 `_github_api_fallback`）；github 源 `trust_env=True`（可走系统代理）。
+2. `hotspot.py`：`SCIENCE_TOPICS` 词表 + `match_channels`（每次抓取算 subtopics）；
+   `briefing()` 返回 `science` / `tools` 栏目；`tools_section`（受众启发式
+   `guess_audience` 兜底）+ `merge_tools_meta`（AI 结果防幻觉校验后落盘）；
+   `HotspotStore` 增加 `tools_meta.json` 读写；早报理由抽为模块级 `_hot_reason`。
+3. `llm.py`：`generate_tool_meta`（批量仓库 → 受众/用途/提效点 JSON）。
+4. `routers/hotspot.py`：`ai-briefing` 增加 `section` 参数（hot/science，缓存键
+   `(generated_at, section)`）；新增 `POST /api/hotspot/ai-tools`。
+5. 前端 `HotspotRadar.tsx`：早报 Tab 切换（localStorage 记忆）、科普/工具栏目渲染、
+   AI 按钮按栏目分流；`types.ts` / `api.ts` 新类型与接口；`index.css` 样式
+   （brief-tabs / subtopic-badge / aud-chip / tool-stars / pf-github）。
+
+### 验证
+
+- 后端 pytest：**262 passed**（test_hotspot 33 个，新增 GitHub 解析/兜底、科普频道、
+  栏目编排、AI 工具解读缓存、section 路由 8 个）
+- 前端 `tsc -b` + `npm run build`：通过
+- 实测：6/6 源在线；GitHub trending 解析 15 条（当日页实际条数），星数与
+  GitHub API 实际值核对一致（Scrapling 92.5k ↔ 92466）；`ai-tools` 真实 LLM
+  解读 12 个仓库成功，二次调用 `classified: 0`（缓存命中）；科普 AI 点评正常
+
+## 十七、2026-11-03 视频工作流 Skill 化（第一阶段打样）
+
+### 动机
+
+不再以 FastAPI 编排代码作为流程的唯一载体：把「内容选题 → 视频文案 → BGM → 配音 →
+视频风格 → 视频内容」的流程与知识沉淀为 ZCode skill，由 AI agent 依据 skill 直接做
+创作判断（不再经后端 LLM 转发），确定性执行（TTS/预混/渲染）走 CLI 工具包装。
+FastAPI 六步向导保留双轨（决策：不删不改，不再新增功能）。
+
+### 交付
+
+1. **Skill 家族**（`.agents/skills/`，项目级，ZCode 自动发现；总入口 `video-producer`）：
+   - `video-producer`：六阶段流水线路由、pid/目录契约、★模板相关性规则（落 plan.json）。
+     references：pipeline-contracts.md（产物 schema 单一事实源）、legacy-backend.md（双轨）、
+     topic-selection.md（选题临时指引）。
+   - `video-script`：写稿流程 + 自检清单。references：tone-recipes.md（prompts.json 五配方）、
+     script-rules.md（≤20字/幕数公式/结构四要素/标点停顿）、script-schema.md。
+   - `video-production`：配音→组 props→预混→gen场景→preview→final→验收。
+     references：engine-contract.md（timeline 常量/枚举/易错点）、gen-scene-contract.md、
+     acceptance.md；assets/prompt-pack-template.md（from_scratch 简报 8 节模板）。
+2. **CLI 工具层**（`backend/tools/`，包装 service 不复制逻辑，不依赖 FastAPI）：
+   - `tts_gen.py`：script.json → 逐句 wav + 实测时长 JSON（整场合成+词边界切句+响度归一全复用 voice.py）
+   - `premix_track.py`：camelCase props → mix_line_track/mix_motion_track 整轨预混 → 改写
+     narrationAudio/清逐句 audio（snake↔camel 在工具内转换；时间轴数学仍在 voice.py 与 timeline.ts 两边同步）
+   - `render_video.py`：npx remotion render/still 包装（--frames/--still/--comp），路径自动转绝对，
+     stdout 输出 JSON + 失败时日志尾
+3. **文档**：AGENTS.md（新增 skill 主路径节）、README.md（双轨说明）、本节。
+   plan.json 契约写入 pipeline-contracts.md §6（template 判定落库格式）。
+
+### 验证（mini 端到端，pid=skill-pilot，3 幕 6 句 60s 内科普）
+
+- `tts_gen.py`：6 句全部合成成功（s01_0 2.706s ~ s03_1 2.621s），wav 落
+  `public/voice/projects/skill-pilot/`
+- `premix_track.py`：track.wav 26.39s（44.1k mono），与公式 25.39s+1s 缓冲吻合；
+  schedule 落点 offset=2.9s、句间 0.85s 与 timeline 常量一致；props 改写正确
+- `render_video.py --still 180`：纸感底 + 红色强调高亮 + 镜标签正常
+- `render_video.py --frames 0-299`：preview.mp4 300 帧成功；抽帧确认片头逐字弹入、
+  字幕与配音落点同步（2.9s/6.5s/8.6s）、counter 浮层动画正常
+- 过程修复：argparse help 的 `%` 需转义；renderer 子进程 cwd=remotion-engine，
+  工具入参必须先 resolve 为绝对路径（已在工具内固化）
+
+### 后续（铺开阶段，待用户确认打样效果）
+
+- 其余 4 个阶段 skill：video-topic / video-bgm / video-voiceover / video-style
+  （对应 CLI：web_research / image_search / bgm_search / beat_analyze）
+- gen 场景分支实战一次（video-production 的 SceneNN.tsx 现场编写路径）
+- 发布阶段（抖音文案/封面）可作为第 7 个 skill
+
+## 十七、2026-11-03 《A股这一年》成片交付（skill 流程首次全链路跑通）
+
+### 成片
+
+- `backend/storage/renders/ashare-2026/final.mp4`：61.44s，1080×1920@30，7 镜 15 句，
+  封面 cover.jpg 同目录。项目产物 `backend/storage/projects/ashare-2026/`。
+- 内容：上证指数近一年（2025-10-22~2026-11-03，251 个交易日真实日线，新浪财经）复盘。
+  逐日跳动曲线 gen 场景（7 个，chart.tsx 共享组件：sweep/window/final 三模式 +
+  事件光束/脉冲环 + 右上日期/点位/涨跌读数），开头钩子「昨天 A股大涨1.08%」+
+  片头 kicker「从4243到3599」针对 5s 留存。
+
+### 本次迭代要点
+
+1. **数据更新到当日收盘**：11-03 实际收跌 -0.82%（3608.10），文案按合规红线
+   保持「昨天大涨1.08%」事实表述，s07 新增「结果今天 又跌0.82%」，全年口径
+   -7.8%（跌了近8%）；data.ts/N、Scene01/07 窗口、build_props WINDOWS 同步 251 点。
+2. **sfx 分层**：plan 补 s04/s06 sfxMoment=riser（镜中 55% 蓄力）接入 BGM 最强两拍
+   （见顶 1.1 / 反攻 1.2）；暴跌镜靠 whip/flash 转场自动 impact + counter 重锤。
+3. **切镜卡点修复**：build_props 吸附逻辑改为「保底约束 → 吸附到拍 → 吸附后低于
+   保底则取下一拍」，6/6 切镜 0 帧偏差落在 0.5s 拍网格；BGM 按新事件时刻
+   （20.5/23.0/29.0/37.5/50.0s）重生成 33 小节（66.8s）。
+4. **图表刻度防裁**：推镜 1.2 最大缩放左边界裁至 ~63px，chart.tsx X0 96→180，
+   纵轴刻度 4100/3900/3700 全程完整可见。
+5. 修复 build_props sfxMoment/atmosphere 未从 plan 透传的问题。
+
+### 验证
+
+- 引擎 `tsc --noEmit` 通过；still 抽帧 3 处 + preview 抽帧 3 处视觉验收通过
+  （字幕无出框、刻度完整、读数清晰、红涨绿跌、emphasis 高亮正常）。
+- 成片 ffprobe：61.44s（估算 61.41，±10% 内）；预混整轨生效
+  （narrationAudio=track.wav，逐句 audio 清空）；人声/重音/riser 响度抽查在位。
+- 卡点：6/6 切镜 ±0 帧；BGM 事件全部 snap 至拍网格；sfxMoment 2 次 ≤3。
+
+## 十八、2026-11-03 《A股这一年》V2 迭代（BGM 激起化 + 动效全面升级）
+
+### 用户反馈 → 改动
+
+1. **BGM 不够激起** → 128 BPM（原 120）；事件从 5 个扩到 8 个（3·23 暴跌 hit +
+   低点 subdrop、4·8 反弹、5·13 见顶 1.15、7·17 二次暴跌 + subdrop、10·30 新低
+   subdrop 绝望下潜、11·2 反攻 1.3 全曲最强）；≥0.85 事件自动前置 2s riser 共 4 条；
+   和弦进行 Dm,Bb,F,C → Dm,Bb,G,Am（小调上行张力）。实测响度梯度：反攻 -9.4dB <
+   暴跌 -11.6 < 片头 -12.1 < subdrop -13（动态分层成立）。
+2. **动画生硬** → chart.tsx 特效重写：曲线下面积渐变填充、MA20 均线（点状）、
+   月份轴（竖格线+双月标签）、当前日辉光+逐日跳动脉冲环、事件爆发冲击波+8 向火花、
+   暴跌/新低震屏（rand 确定性抖动）、扫动速度线拖尾、4243/3599 峰谷数值标注、
+   window 模式缓出减速揭晓（ease-out 1.6）。
+3. **运镜转场单一** → 7 镜 7 种运镜（diag_in/tilt_up/handheld/dolly_zoom/diag_out/
+   tilt_down→pull，s06 用 cameraPerLine 句间切机位 tilt_down→push）；转场引入
+   glitch（暴跌）/cut（见顶定格）/flash（二次暴跌）；grade 跟情绪（低谷 saturate
+   0.85-0.9 + tint 0.22-0.28，反攻 1.2 + 0.05）；overlay 换 stat（3914→4163 状态条）
+   + counter；sfxMoment 收敛为 s04 riser×1（BGM 已烘焙 riser，避免同刻双响）。
+
+### 修复
+
+- **128BPM 下切镜脱拍**：根因 offset 2.0 不在 0.46875s 拍网格上（120BPM 时恰好整数拍），
+  局部吸附≠全局吸附。build_props 改为全局时间域吸附（offset 先上取整到拍、
+  切镜在 offset+local 域吸附、吸附后低于保底取下一拍）→ 6/6 切镜 0 帧偏差。
+- 峰谷标注右缘裁字（x 钳制到画布内）；build_props 补 cameraPerLine/sfxMoment 透传。
+
+### 验证
+
+- `tsc --noEmit` 通过；still 5 帧（sweep/crash/final/峰谷标注修复前后）视觉验收通过
+- final.mp4 61.44s（est 61.75，±10% 内）；预混整轨生效；卡点 6/6 ±0 帧
+
+## 十九、2026-11-04 三批改造落地 + 《A股这一年》V3 对标版
+
+按 docs/vibe-upgrade-backlog.md 的优先级路线图，三批连续执行完毕：
+
+### 第一批（留存杠杆）
+- A1 `tools/gen_event_bgm.py`：主旋律动机层（Dm 五声 4 短句 A/A'+8度/B/A''收束，32 拍
+  循环）+ 808 sub 长音层（根音低八度滑音）+ 母线 tanh 1.38/归一 0.90（BGM 文件 RMS
+  0.567、sub 占比 74.6%、能量弧不塌）+ BPM 默认 110。
+- A2/A3/A5 `src/gen/_lib/chrome.tsx`：EraStamp 年代戳 / ProgressDots 章节进度点 /
+  CiteCard 书引卡 / RecapTree 终章复盘树 / SpeedFacts 速查卡 / ChatBubble 共鸣气泡 /
+  Watermark 水印（gen 层组件，src/dv 未动）。
+- B9 片头 66→48 帧：timeline.ts 单一事实源，TitleCard 重定时 + pipeline-contracts 同步。
+
+### 第二批（产能）
+- A4/A6/A7 `src/gen/_lib/infographics.tsx`：Dice3D/DuelBars/BellCurve/ParticleCloud/
+  ConvergeLine/QuizCard。
+- B1 `tools/build_props.py` 通用构建器：配置驱动（build_config.json）+ 全局拍域吸附 +
+  事件同拍碰撞顺延 + cameraPerLine/sfx 透传 + props 写 sceneStarts；
+  ashare-2026 专用脚本已删除迁移。
+- B2 `tools/qa_report.py`：黑帧（暗色安全 pix_th=0.03）/静音/响度/落拍（读
+  sceneStarts）/时长机检，strict 退出码。
+
+### 视频改造（ashare-2026 V3 对标版）
+- cinema+gold 暗调 look；7 章 EraStamp+进度点+水印；s01「一打开账户就绿…」共鸣气泡；
+  s04 数据源引用卡；s05 跌幅速查卡；s07 终章复盘树（顶/底/今三卡+评论区 CTA）；
+  标题改数字冲击「一年，跌了将近8%」；chart.tsx 底色亮度自适应（暗底暖白墨、
+  红涨绿跌提亮）；BGM 110BPM 8 事件重生成（hit/sub 碰撞已顺延一拍）。
+- 验收：qa_report **pass**（6/6 切镜 0 帧落拍偏差、黑帧 0、响度 -9.8dB 比 V2 +2.8dB）；
+  成片 61.61s；`--comp CinemaVideo` 横屏版可渲。
+- 修 bug：props beats 数组按秒误当条数截断（V1 起就有，只影响元数据）；
+  CinemaVideo 居中 / render still composition 透传。
+
+### 第三批（产品化）
+- A9 CinemaVideo 横屏 comp 注册 + render_video `--comp CinemaVideo`。
+- B6 `POST /api/hotspot/topics/{tid}/brief` 制作简报端点 + 选题工作台「📋 简报」按钮
+  （复制 JSON → 发给 ZCode 走 video-producer 流程）。
+- B7 `tools/publish_log.py` 发布登记（add/list/stats 回填，storage/publish_log.json）。
+- B8 系列化约定写入 backlog 文档（标题公式/水印/复盘树/series 字段）。
+
+### 验证
+- 后端 pytest 276 passed；前端 tsc + build 通过；引擎 tsc 通过。
+- 后端已重启（新端点生效）。经验清单与执行记录：docs/vibe-upgrade-backlog.md。
+
+## 二十、2026-11-04 《AI 不用截图也能操作电脑》vibe 知识大赏科普
+
+> 用户需求：基于 vercel-labs/agent-desktop 做一期抖音竖屏科普（vibe 知识大赏），
+> 讲清应用场景 / 如何使用 / 注意事项，要抓留存、讲干货，并配活动向 BGM。
+
+### 成片
+
+| 项 | 值 |
+|---|---|
+| 项目 id | `agent-desktop-2026` |
+| 标题 | AI 不用截图也能操作电脑 |
+| 成片 | `backend/storage/renders/agent-desktop-2026/final.mp4`（约 66.7s / 2000 帧 / 20.5MB） |
+| 预览 / 封面 | 同目录 `preview.mp4`、`cover.jpg` |
+| 规格 | 1080×1920 @30fps，h264 + AAC 48k stereo |
+| 结构 | 9 镜 / 23 句：钩子（截图派 vs 读骨架派）→ 它读什么（JSON+ref）→ 菜单比方 → 三个场景（报销/报表/回归测试）→ 三步上手 → 三个坑 → 收藏卡 |
+| 判定 | `from_scratch`（与引擎内置领域场景无关；9 个现场编写 gen 场景，无模板意象、无 stars） |
+
+### 内容事实源
+
+`backend/storage/projects/agent-desktop-2026/research.json`（10 节点，GitHub API/README/官方文档）：
+14,201 stars、Apache-2.0、macOS 13+/Win10 1809+/Ubuntu 24.04+、60 命令、ref 带快照 id、
+headless 默认、16 种错误码且仅 `disposition.retry=safe` 可重试。
+
+### 留存设计
+
+- 前 3 秒反常识钩子（「你还在教 AI 截图找按钮吗？」）+ 右上角 9 点章节进度（ProgressDots）
+- 中段 46 秒内密集给 3 个具体场景，每个场景一张「可截图保存」的信息卡
+- 结尾「这一屏值得收藏」三栏复盘卡，直接服务收藏率
+- 文案 23 句全部 ≤14 字，实测节奏 65.3s（估算），无长静音
+
+### BGM
+
+- 使用用户自备 `public/bgm/vibe_bgm.mp3`（112.3 BPM，抖音视频音轨提取 130s）。
+- 官方活动曲库无法公开核验（活动页 JS/登录态，WebSearch 通道本次不可用），未编造曲名；
+  发布页可直接换抖音站内「vibe知识大赏」活动音乐，切镜在 0.534s 拍网格上，100~125 BPM 均可卡住。
+- QA：8/8 切镜落拍（±2 帧内），黑帧 0，>0.6s 静音 0，loudness mean -15.5dB，无削波（flat factor 0）。
+
+### 工程记录（踩坑）
+
+1. **预混常量与引擎不同步（历史遗留）**：`premix_track.py` 首次运行产出 77.9s 整轨，而引擎时间轴
+   只有 68.5s —— 根因是 `voice.py` 的 `__pycache__` 陈旧（常量 B9 已改为 LEAD 0.45/TAIL 0.4/
+   GAP 0.22/BONUS 0.12）。清 `__pycache__` 后重跑与引擎一致（66.3s）。
+   **结论：改 voice.py/timeline.ts 常量后，先清 `backend/**/__pycache__` 再预混。**
+2. `build_props.py` 已同步新常量并按标点给 `pauseAfter`（`？`→0.6 等），旧文档里的 0.9/0.6 已过期。
+3. 用 PowerShell `Get-Content|Set-Content` 批量改中文 .tsx 会把 UTF-8 读成 GBK 并写坏文件——
+   本次 5 个场景文件被写坏后整体重写。**中文源码只用 edit/write 工具改，不要走 PowerShell 文本管道。**
+4. overlay `counter` 在 `Card`（absolute + margin auto）下贴左出框，数字被裁 —— 大数字改由 gen 场景自绘。
+5. gen 场景 `p` 与镜长成比例（本片镜长 5.8~9.3s），动画阈值按 p 设计时要以「镜头内节奏」为准，
+   并在前 20% 内完成入画，避免长镜前段空镜。
+
+### 代码改动
+
+- 新增 `remotion-engine/src/gen/agent-desktop-2026/{ui.tsx,Scene01..09}.tsx`，`registry.ts` 合并注册（保留旧项目）。
+- 无引擎改动（`src/dv/*` 未动）；`tsc --noEmit` 通过。
+
+### 衍生版本（同素材重剪，A/B 投放）
+
+`backend/tools/make_agent_desktop_cuts.py` 从母版 script/plan/durations 剪出两个版本，
+**复用原逐句 wav（复制 + 重新编号），不重跑 TTS**：
+
+| 版本 | pid | 时长 | 结构 | QA |
+|---|---|---|---|---|
+| 快剪 | `agent-desktop-cut30` | 34.35s | 钩子+读骨架+老 OA+三坑+收藏（5 镜 11 句） | pass，4/4 落拍 |
+| 切片 | `agent-desktop-slice18` | 22.04s | 钩子+三个坑+收藏（3 镜 6 句） | pass，2/2 落拍 |
+
+产物：`backend/storage/renders/<pid>/{final.mp4,cover.jpg,props.json}`；
+文案与投放策略见 `storage/projects/agent-desktop-2026/publish.md`「三版成片投放策略」。
+
+

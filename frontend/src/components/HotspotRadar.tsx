@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   aiBriefing,
+  aiTools,
+  BRIEF_TOP_N,
   clearTopics,
   createDirection,
   deleteDirection,
   deleteTopic,
   generateAiTopics,
+  topicBrief,
   hotspotBriefing,
   hotspotItems,
   hotspotRefresh,
@@ -35,7 +38,10 @@ const PLATFORM_NAMES: Record<string, string> = {
   weibo: "微博",
   xiaohongshu: "小红书",
   kuaishou: "快手",
+  github: "GitHub",
 };
+
+type BriefTab = "hot" | "science" | "tools";
 
 /** 无榜单但可搜的平台：详情弹窗用于多平台分发前调研 */
 const CROSS_SEARCH: Record<string, string> = {
@@ -138,6 +144,16 @@ export const HotspotRadar = ({
   const [items, setItems] = useState<HotItem[]>([]);
   const [brief, setBrief] = useState<Briefing | null>(null);
   const [briefComments, setBriefComments] = useState<BriefingComment[] | null>(null);
+  const [scienceComments, setScienceComments] = useState<BriefingComment[] | null>(null);
+  // 早报栏目：实时热点 / 科普知识 / 工具分享（记忆上次所在栏目）
+  const [briefTab, setBriefTabState] = useState<BriefTab>(() => {
+    const v = localStorage.getItem("vw.briefTab");
+    return v === "science" || v === "tools" ? v : "hot";
+  });
+  const setBriefTab = (t: BriefTab) => {
+    setBriefTabState(t);
+    localStorage.setItem("vw.briefTab", t);
+  };
   const [briefAiBusy, setBriefAiBusy] = useState(false);
   const [briefOpen, setBriefOpen] = useState(() => localStorage.getItem("vw.briefOpen") !== "0");
   const [loading, setLoading] = useState(true);
@@ -246,7 +262,7 @@ export const HotspotRadar = ({
       const [items, status, brief] = await Promise.all([
         hotspotItems({ direction_id: f.directionId, platform: f.platform, q: f.q, sort: f.sort }),
         hotspotStatus(),
-        hotspotBriefing(5),
+        hotspotBriefing(BRIEF_TOP_N),
       ]);
       setItems(items);
       setStatus(status);
@@ -430,6 +446,18 @@ export const HotspotRadar = ({
     }
   };
 
+  /** 选题 → 制作简报（复制 JSON，发给 ZCode 走 skill 流程） */
+  const copyBrief = async (t: SavedTopic) => {
+    try {
+      const brief = await topicBrief(t.id);
+      await navigator.clipboard.writeText(JSON.stringify(brief, null, 1));
+      setCopiedId(t.id);
+      setTimeout(() => setCopiedId(""), 1500);
+    } catch (e) {
+      setErr(`简报失败：${(e as Error).message}`);
+    }
+  };
+
   /** 一键生成脚本：建项目 + AI 生成分镜（全自动），完成后回填项目 id */
   const genScriptFromTopic = async (t: SavedTopic) => {
     if (!onGenerateScript) return;
@@ -467,16 +495,23 @@ export const HotspotRadar = ({
     document.querySelector(".hot-list")?.scrollIntoView({ behavior: "smooth" });
   };
 
-  /** 早报 AI 深度点评（后端按轮次缓存，省 token） */
+  /** 早报 AI：实时热点/科普 → 逐条拍摄点评；工具 → 仓库受众解读（后端按仓库缓存，省 token） */
   const doBriefAi = async () => {
     setBriefAiBusy(true);
     setErr("");
     try {
-      const r = await aiBriefing(5);
-      setBriefComments(r.comments ?? []);
-      if (r.generated_at !== brief?.generated_at) await loadAll();
+      if (briefTab === "tools") {
+        const r = await aiTools(aiModel || null);
+        setBrief((prev) => (prev ? { ...prev, tools: r.tools ?? prev.tools } : prev));
+      } else {
+        const sec = briefTab;
+        const r = await aiBriefing(BRIEF_TOP_N, sec);
+        if (sec === "science") setScienceComments(r.comments ?? []);
+        else setBriefComments(r.comments ?? []);
+        if (r.generated_at !== brief?.generated_at) await loadAll();
+      }
     } catch (e) {
-      setErr(`AI 点评失败：${(e as Error).message}`);
+      setErr(`AI 解读失败：${(e as Error).message}`);
     } finally {
       setBriefAiBusy(false);
     }
@@ -544,10 +579,28 @@ export const HotspotRadar = ({
     return [...ps];
   }, [items]);
 
+  const toolsAllDone =
+    !!brief?.tools?.items.length && brief.tools.items.every((t) => t.ai_done);
+  const aiBtnLabel =
+    briefTab === "tools"
+      ? toolsAllDone
+        ? "🤖 已解读"
+        : "🤖 AI 解读"
+      : briefTab === "science"
+        ? scienceComments
+          ? "🤖 已点评"
+          : "🤖 AI 点评"
+        : briefComments
+          ? "🤖 已点评"
+          : "🤖 AI 点评";
+
   return (
     <div>
       {/* 今日早报 */}
-      {brief && brief.items.length > 0 && (
+      {brief &&
+        ((brief.items.length > 0 ||
+          (brief.science?.items.length ?? 0) > 0 ||
+          (brief.tools?.items.length ?? 0) > 0) && (
         <div className={`brief-card ${briefOpen ? "" : "brief-closed"}`}>
           <div className="brief-head" onClick={() => {
             setBriefOpen((v) => {
@@ -562,6 +615,10 @@ export const HotspotRadar = ({
               共 {brief.stats.total} 条热点 · 24h 内新见 {brief.stats.fresh_24h} 条
               {typeof brief.stats.overlap_pct === "number" &&
                 ` · 与上轮重合 ${brief.stats.overlap_pct}%`}
+              {typeof brief.stats.science_total === "number" &&
+                ` · 科普 ${brief.stats.science_total}`}
+              {typeof brief.stats.tools_total === "number" &&
+                ` · 工具 ${brief.stats.tools_total}`}
               · 源 {brief.stats.sources_ok}/{brief.stats.sources_total} 在线 · {brief.generated_at.slice(11, 16)} 生成
             </span>
             <button
@@ -571,77 +628,215 @@ export const HotspotRadar = ({
                 e.stopPropagation();
                 doBriefAi();
               }}
-              title="AI 逐条给出适合形式/拍摄角度/风险提示"
+              title={
+                briefTab === "tools"
+                  ? "AI 给每个仓库标注职场受众/用途/提效点"
+                  : "AI 逐条给出适合形式/拍摄角度/风险提示"
+              }
             >
-              {briefAiBusy ? "点评中..." : briefComments ? "🤖 已点评" : "🤖 AI 点评"}
+              {briefAiBusy ? (briefTab === "tools" ? "解读中..." : "点评中...") : aiBtnLabel}
             </button>
             <span className="brief-toggle">{briefOpen ? "收起 ▴" : "展开 ▾"}</span>
           </div>
           {briefOpen && (
             <>
-              {brief.stats.platforms && brief.stats.platforms.length > 0 && (
-                <div className="brief-insight">
-                  {brief.stats.platforms.map((p) => (
-                    <span
-                      key={p.platform}
-                      className={`pf-badge pf-${p.platform}`}
-                      title={`${p.name} 在榜 ${p.count} 条`}
-                    >
-                      {p.name} {p.count}
-                    </span>
-                  ))}
-                  {brief.stats.directions?.map((d) => (
-                    <span key={d.id} className="insight-dir" title={`方向「${d.name}」命中 ${d.count} 条`}>
-                      🎯 {d.name} {d.count}
-                    </span>
-                  ))}
-                  {typeof brief.stats.avg_burst === "number" && (
-                    <span className="insight-avg">平均第一波指数 {brief.stats.avg_burst}</span>
-                  )}
-                </div>
-              )}
-              <ol className="brief-list">
-              {brief.items.map((b) => {
-                const cm = briefComments?.find((c) => c.ref === b.title);
-                return (
-                  <li key={b.id} className="brief-item">
-                    <span className={`burst-num small ${burstTier(b.burst)}`}>{Math.round(b.burst)}</span>
-                    <div className="brief-main">
-                      <div className="brief-row1">
-                        {b.search_url ? (
-                          <a href={b.search_url} target="_blank" rel="noreferrer">{b.title}</a>
-                        ) : (
-                          b.title
-                        )}
-                        <span className="muted" style={{ fontSize: 12 }}>
-                          [{b.platform}]
-                          {b.cross ? " 🔗共振" : ""}
-                        </span>
-                        <button
-                          className={`btn tiny ${selected.has(b.id) ? "picked" : ""}`}
-                          onClick={() => pickFromBrief(b.id)}
-                          title="选中该热点，下方列表可直接 AI 选题"
+              <div className="brief-tabs" onClick={(e) => e.stopPropagation()}>
+                <button
+                  className={`brief-tab ${briefTab === "hot" ? "brief-tab-active" : ""}`}
+                  onClick={() => setBriefTab("hot")}
+                >
+                  🔥 实时热点
+                </button>
+                <button
+                  className={`brief-tab ${briefTab === "science" ? "brief-tab-active" : ""}`}
+                  onClick={() => setBriefTab("science")}
+                >
+                  🔬 科普知识
+                  {typeof brief.stats.science_total === "number" ? ` ${brief.stats.science_total}` : ""}
+                </button>
+                <button
+                  className={`brief-tab ${briefTab === "tools" ? "brief-tab-active" : ""}`}
+                  onClick={() => setBriefTab("tools")}
+                >
+                  🧰 工具分享
+                  {typeof brief.stats.tools_total === "number" ? ` ${brief.stats.tools_total}` : ""}
+                </button>
+              </div>
+              {briefTab === "hot" && (
+                <>
+                  {brief.stats.platforms && brief.stats.platforms.length > 0 && (
+                    <div className="brief-insight">
+                      {brief.stats.platforms.map((p) => (
+                        <span
+                          key={p.platform}
+                          className={`pf-badge pf-${p.platform}`}
+                          title={`${p.name} 在榜 ${p.count} 条`}
                         >
-                          {selected.has(b.id) ? "已选 ✓" : "＋ 选题"}
-                        </button>
-                      </div>
-                      <div className="brief-reason">{b.reason}</div>
-                      {cm && (
-                        <div className="brief-ai">
-                          <span>🎬 {cm.form}</span>
-                          <span>💡 {cm.angle}</span>
-                          {cm.risk && cm.risk !== "无" && <span className="brief-risk">⚠️ {cm.risk}</span>}
-                        </div>
+                          {p.name} {p.count}
+                        </span>
+                      ))}
+                      {brief.stats.directions?.map((d) => (
+                        <span key={d.id} className="insight-dir" title={`方向「${d.name}」命中 ${d.count} 条`}>
+                          🎯 {d.name} {d.count}
+                        </span>
+                      ))}
+                      {typeof brief.stats.avg_burst === "number" && (
+                        <span className="insight-avg">平均第一波指数 {brief.stats.avg_burst}</span>
                       )}
                     </div>
-                  </li>
-                );
-              })}
-              </ol>
+                  )}
+                  <ol className="brief-list">
+                  {brief.items.map((b) => {
+                    const cm = briefComments?.find((c) => c.ref === b.title);
+                    return (
+                      <li key={b.id} className="brief-item">
+                        <span className={`burst-num small ${burstTier(b.burst)}`}>{Math.round(b.burst)}</span>
+                        <div className="brief-main">
+                          <div className="brief-row1">
+                            {b.search_url ? (
+                              <a href={b.search_url} target="_blank" rel="noreferrer">{b.title}</a>
+                            ) : (
+                              b.title
+                            )}
+                            <span className="muted" style={{ fontSize: 12 }}>
+                              [{b.platform}]
+                              {b.cross ? " 🔗共振" : ""}
+                            </span>
+                            <button
+                              className={`btn tiny ${selected.has(b.id) ? "picked" : ""}`}
+                              onClick={() => pickFromBrief(b.id)}
+                              title="选中该热点，下方列表可直接 AI 选题"
+                            >
+                              {selected.has(b.id) ? "已选 ✓" : "＋ 选题"}
+                            </button>
+                          </div>
+                          <div className="brief-reason">{b.reason}</div>
+                          {cm && (
+                            <div className="brief-ai">
+                              <span>🎬 {cm.form}</span>
+                              <span>💡 {cm.angle}</span>
+                              {cm.risk && cm.risk !== "无" && <span className="brief-risk">⚠️ {cm.risk}</span>}
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                  </ol>
+                </>
+              )}
+              {briefTab === "science" && (
+                brief.science && brief.science.items.length > 0 ? (
+                  <>
+                    {brief.science.subtopics && brief.science.subtopics.length > 0 && (
+                      <div className="brief-insight">
+                        {brief.science.subtopics.map((s) => (
+                          <span
+                            key={s.name}
+                            className="subtopic-badge"
+                            title={`「${s.name}」今日在榜 ${s.count} 条`}
+                          >
+                            {s.name} {s.count}
+                          </span>
+                        ))}
+                        <span className="insight-avg">当日全平台科普最火 · 随热点自动刷新</span>
+                      </div>
+                    )}
+                    <ol className="brief-list">
+                      {brief.science.items.map((b) => {
+                        const cm = scienceComments?.find((c) => c.ref === b.title);
+                        return (
+                          <li key={b.id} className="brief-item">
+                            <span className={`burst-num small ${burstTier(b.burst)}`}>{Math.round(b.burst)}</span>
+                            <div className="brief-main">
+                              <div className="brief-row1">
+                                {b.search_url ? (
+                                  <a href={b.search_url} target="_blank" rel="noreferrer">{b.title}</a>
+                                ) : (
+                                  b.title
+                                )}
+                                <span className="muted" style={{ fontSize: 12 }}>
+                                  [{b.platform}]
+                                  {b.cross ? " 🔗共振" : ""}
+                                </span>
+                                {b.subtopics?.slice(0, 2).map((s) => (
+                                  <span key={s} className="subtopic-badge">{s}</span>
+                                ))}
+                                <button
+                                  className={`btn tiny ${selected.has(b.id) ? "picked" : ""}`}
+                                  onClick={() => pickFromBrief(b.id)}
+                                  title="选中该热点，下方列表可直接 AI 选题"
+                                >
+                                  {selected.has(b.id) ? "已选 ✓" : "＋ 选题"}
+                                </button>
+                              </div>
+                              <div className="brief-reason">{b.reason}</div>
+                              {cm && (
+                                <div className="brief-ai">
+                                  <span>🎬 {cm.form}</span>
+                                  <span>💡 {cm.angle}</span>
+                                  {cm.risk && cm.risk !== "无" && <span className="brief-risk">⚠️ {cm.risk}</span>}
+                                </div>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </>
+                ) : (
+                  <div className="hint" style={{ padding: "8px 0" }}>
+                    暂无命中科普频道的热点。词表覆盖：宇宙地球 / AI科技 / 财经知识 / 健康心理 / 历史人文 / 生活百科。
+                  </div>
+                )
+              )}
+              {briefTab === "tools" && (
+                brief.tools && brief.tools.items.length > 0 ? (
+                  <ol className="brief-list">
+                    {brief.tools.items.map((t) => (
+                      <li key={t.id} className="brief-item">
+                        <span className={`burst-num small ${burstTier(t.burst)}`}>{Math.round(t.burst)}</span>
+                        <div className="brief-main">
+                          <div className="brief-row1">
+                            <a href={t.url} target="_blank" rel="noreferrer" title="打开 GitHub 仓库">
+                              {t.title}
+                            </a>
+                            {t.stars && <span className="tool-stars" title="GitHub 星数">{t.stars}</span>}
+                            {t.language && <span className="tool-lang">{t.language}</span>}
+                            {(t.audience ?? []).slice(0, 3).map((a) => (
+                              <span key={a} className="aud-chip">{a}</span>
+                            ))}
+                            <button
+                              className={`btn tiny ${selected.has(t.id) ? "picked" : ""}`}
+                              onClick={() => pickFromBrief(t.id)}
+                              title="选中该工具热点，下方列表可直接 AI 选题"
+                            >
+                              {selected.has(t.id) ? "已选 ✓" : "＋ 选题"}
+                            </button>
+                          </div>
+                          {t.summary && <div className="brief-reason">{t.summary}</div>}
+                          {t.use && (
+                            <div className="brief-ai">
+                              <span>🧰 {t.use}</span>
+                              {t.why && <span>💡 {t.why}</span>}
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <div className="hint" style={{ padding: "8px 0" }}>
+                    {brief.tools && brief.tools.source_ok === false
+                      ? "GitHub 源本次未抓到数据（网络可能受限），会随下次抓取自动重试。"
+                      : "暂无 GitHub 热门仓库数据，点击「立即抓取」试试。"}
+                  </div>
+                )
+              )}
             </>
           )}
         </div>
-      )}
+      ))}
 
       {/* 赛道预警横幅 */}
       {freshAlerts.length > 0 && (
@@ -1171,6 +1366,13 @@ export const HotspotRadar = ({
                             title="移入已弃"
                           >
                             弃
+                          </button>
+                          <button
+                            className="btn small"
+                            title="生成制作简报 JSON 并复制（发给 ZCode 走 skill 流程）"
+                            onClick={() => copyBrief(t)}
+                          >
+                            {copiedId === t.id ? "已复制 ✓" : "📋 简报"}
                           </button>
                           <button className="btn small danger" onClick={() => removeTopic(t.id)}>
                             删

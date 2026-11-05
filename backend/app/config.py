@@ -20,7 +20,17 @@ HOTSPOT_REFRESH_MINUTES = max(5, int(os.getenv("HOTSPOT_REFRESH_MINUTES", "10"))
 HOTSPOT_TIMEOUT_SECONDS = int(os.getenv("HOTSPOT_TIMEOUT_SECONDS", "12"))
 HOTSPOT_SNAPSHOT_KEEP_HOURS = int(os.getenv("HOTSPOT_SNAPSHOT_KEEP_HOURS", "72"))
 
-REMOTION_DIR = Path(os.getenv("REMOTION_DIR") or r"D:\Work\remotion-life-sim")
+# 热门歌曲（抖音热歌 / 音乐榜单聚合）：榜单快照与状态
+MUSIC_CHART_DIR = Path(os.getenv("MUSIC_CHART_DIR") or (STORAGE_DIR / "music_chart"))
+MUSIC_CHART_SNAPSHOTS_DIR = MUSIC_CHART_DIR / "snapshots"
+# 榜单本身日更/周更，抓取间隔无需太密（最小 10 分钟，对源保持礼貌）
+MUSIC_CHART_REFRESH_MINUTES = max(10, int(os.getenv("MUSIC_CHART_REFRESH_MINUTES", "30")))
+MUSIC_CHART_TIMEOUT_SECONDS = int(os.getenv("MUSIC_CHART_TIMEOUT_SECONDS", "12"))
+MUSIC_CHART_SNAPSHOT_KEEP_HOURS = int(os.getenv("MUSIC_CHART_SNAPSHOT_KEEP_HOURS", "336"))
+
+REMOTION_DIR = Path(
+    os.getenv("REMOTION_DIR") or (BACKEND_DIR.parent / "remotion-engine")
+)
 REMOTION_PUBLIC = REMOTION_DIR / "public"
 VOICE_PUBLIC_SUBDIR = "voice/projects"  # public 下的相对目录
 PIC_PUBLIC_SUBDIR = "pic/projects"
@@ -58,5 +68,6 @@ def ensure_dirs() -> None:
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
     RENDERS_DIR.mkdir(parents=True, exist_ok=True)
     HOTSPOT_SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+    MUSIC_CHART_SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
     (REMOTION_PUBLIC / VOICE_PUBLIC_SUBDIR).mkdir(parents=True, exist_ok=True)
     (REMOTION_PUBLIC / PIC_PUBLIC_SUBDIR).mkdir(parents=True, exist_ok=True)

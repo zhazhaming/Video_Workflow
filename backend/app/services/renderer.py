@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""渲染服务：子进程调用 remotion-life-sim 的 Remotion CLI。"""
+"""渲染服务：子进程调用 remotion-engine 的 Remotion CLI。"""
 import re
 import subprocess
 from pathlib import Path
@@ -48,11 +48,11 @@ def render_video(
     return proc.returncode
 
 
-def render_still(props_path: Path, frame: int, out_path: Path, log_path: Path | None = None) -> int:
+def render_still(props_path: Path, frame: int, out_path: Path, log_path: Path | None = None, composition: str | None = None) -> int:
     """渲染单帧 PNG（六步流程第 4 步的样式样图）。返回进程退出码。"""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = (
-        f'npx remotion still {COMPOSITION_ID} "{out_path}" '
+        f'npx remotion still {_safe_composition(composition) or COMPOSITION_ID} "{out_path}" '
         f'--props="{props_path}" --frame={frame} --overwrite'
     )
     if log_path is None:

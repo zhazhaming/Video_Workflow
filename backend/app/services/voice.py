@@ -500,10 +500,11 @@ def build_line_list(script_shots) -> list[tuple[str, str]]:
 # 经 narrationAudio（根级 Audio）播放；混音失败时回退逐句路径。
 
 _TRACK_FPS = 30
-_TRACK_LEAD = 0.9
-_TRACK_TAIL = 0.6
-_TRACK_GAP = 0.35
-_TRACK_PAUSE_BONUS = 0.45
+_TRACK_LEAD = 0.45
+_TRACK_TAIL = 0.4
+_TRACK_GAP = 0.22
+_TRACK_PAUSE_BONUS = 0.12
+_TRACK_INTRO_FRAMES = 48  # 与 timeline.ts INTRO_FRAMES 同步（原 66 已过期）
 _TRACK_OVERLAP = {"whip": 11, "zoom": 13, "flash": 7, "cut": 3, "glitch": 10, "slide": 12, "dissolve": 16}
 _TRACK_SR = 44100
 
@@ -544,8 +545,8 @@ def mix_line_track(project_id: str, props: dict) -> dict:
     {"src": "voice/projects/<pid>/track.wav", "schedule": [{line, at, dur}, ...]}。
     """
     beats = list(((props.get("bgm") or {}).get("beats") or [])[:400])
-    intro_frames = 0 if props.get("title_card") is False else 66
-    offset = max(2.0, _track_snap(max(0.0, (intro_frames - 15) / _TRACK_FPS), beats, 0.45))
+    intro_frames = 0 if props.get("title_card") is False else _TRACK_INTRO_FRAMES
+    offset = _track_snap(max(2.0, max(0.0, (intro_frames - 15) / _TRACK_FPS)), beats, 0.45)
 
     # 逐场布局（与 DataVideo.buildLayout 一致）
     scenes: list[dict] = []
@@ -566,12 +567,17 @@ def mix_line_track(project_id: str, props: dict) -> dict:
                        "enter": sh.get("enter_transition") or "dissolve"})
         cursor += dur_s
 
-    # 场景起点：节拍吸附 + 不许侵入上一镜内容（与 buildTimeline 一致）
-    starts = [0.0] + [_track_snap(sc["start"], beats) for sc in scenes[1:]]
-    for i in range(1, len(starts)):
+    # 场景起点：节拍吸附 + 不许侵入上一镜内容（与 buildTimeline 完全一致）
+    starts = [0.0]
+    for i in range(1, len(scenes)):
         ov = _TRACK_OVERLAP.get(scenes[i]["enter"], 16) / _TRACK_FPS
-        earliest = starts[i - 1] + scenes[i - 1]["dur_s"] - ov + 0.3
-        starts[i] = max(starts[i], earliest, starts[i - 1] + 0.6)
+        guard = starts[i - 1] + scenes[i - 1]["dur_s"] - ov + 0.3
+        raw = max(scenes[i]["start"], guard, starts[i - 1] + 0.6)
+        snapped = _track_snap(raw, beats)
+        if snapped < guard:
+            later = next((b for b in beats if b >= guard), None)
+            snapped = later if later is not None else raw
+        starts.append(snapped)
 
     total_s = offset + sum(sc["dur_s"] for sc in scenes) + 1.0
     buf = np.zeros(int(total_s * _TRACK_SR) + _TRACK_SR, dtype=np.float64)

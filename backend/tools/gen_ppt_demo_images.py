@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
 
 PID = "91bdcc0592dc"
-OUT_DIR = Path(rf"D:\Work\remotion-life-sim\public\pic\projects\{PID}")
+OUT_DIR = Path(rf"D:/work/Video_Workflow/remotion-engine\public\pic\projects\{PID}")
 W, H = 1080, 1920
 UI = "C:/Windows/Fonts/msyh.ttc"
 UI_BD = "C:/Windows/Fonts/msyhbd.ttc"

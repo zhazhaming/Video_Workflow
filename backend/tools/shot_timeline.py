@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""精确复刻 remotion-life-sim/src/DataVideo.tsx 的 buildTimeline 时间轴（含节拍吸附），
+"""精确复刻 remotion-engine/src/DataVideo.tsx 的 buildTimeline 时间轴（含节拍吸附），
 输出每镜在成片中的 [start,end] 秒区间，供抽帧验收使用。
 用法: python tools/shot_timeline.py <props.json>
 """

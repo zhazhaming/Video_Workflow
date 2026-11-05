@@ -8,10 +8,10 @@ import subprocess
 import numpy as np
 
 FF = os.path.join(
-    r"D:\Work\remotion-life-sim", "node_modules", "@remotion",
+    r"D:/work/Video_Workflow/remotion-engine", "node_modules", "@remotion",
     "compositor-win32-x64-msvc", "ffmpeg.exe",
 )
-BGMDIR = r"D:\Work\remotion-life-sim\public\bgm"
+BGMDIR = r"D:/work/Video_Workflow/remotion-engine\public\bgm"
 TMP = r"D:\Work\video-workflow\.qa"
 CANDS = ["llm_race_bgm", "auto_48ddb11c", "online_bgm", "BARRETE_3", "earth_birth_bgm"]
 SR = 22050

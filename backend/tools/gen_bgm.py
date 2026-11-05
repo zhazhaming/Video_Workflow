@@ -150,7 +150,7 @@ def write_wav(path: str, data: np.ndarray) -> None:
 
 def main():
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    remotion_dir = os.environ.get("REMOTION_DIR", r"D:\Work\remotion-life-sim")
+    remotion_dir = os.environ.get("REMOTION_DIR", r"D:/work/Video_Workflow/remotion-engine")
     out_dir = os.path.join(remotion_dir, "public", "bgm")
     os.makedirs(out_dir, exist_ok=True)
 

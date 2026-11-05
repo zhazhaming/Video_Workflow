@@ -39,12 +39,34 @@ log = logging.getLogger("hotspot")
 
 CROSS_PLATFORM_BONUS = 8.0  # 同标题跨平台共振加成
 _HISTORY_KEEP = 40  # 每条热点保留的最近热度点数
+# 今日早报每个栏目的展示条数（15 行，方便逐条筛选做内容）；也是路由层允许的上限
+BRIEF_TOP_N = 15
 
 PRESET_DIRECTIONS = [
     {"name": "AI科技", "keywords": ["AI", "人工智能", "大模型", "机器人", "芯片", "手机", "互联网", "程序员"], "exclude": []},
     {"name": "影视娱乐", "keywords": ["电影", "电视剧", "综艺", "明星", "演唱会", "导演", "票房", "主播"], "exclude": []},
     {"name": "社会民生", "keywords": ["养老", "房价", "生育", "工资", "就业", "医院", "学校", "食品安全", "天气", "假期"], "exclude": []},
     {"name": "游戏电竞", "keywords": ["游戏", "电竞", "王者荣耀", "原神", "主机", "主播"], "exclude": []},
+]
+
+# 内置科普频道（早报「科普知识」栏目）：子话题 → 关键词。
+# 命中任一子话题词表即视为科普/知识内容，与用户自定义方向（directions）互不影响。
+SCIENCE_TOPICS: list[tuple[str, list[str]]] = [
+    ("宇宙地球", ["地球", "宇宙", "太空", "天文", "NASA", "黑洞", "火星", "月球", "太阳系", "陨石",
+                  "火箭", "登月", "航天", "卫星", "引力", "星系", "恒星", "行星", "恐龙", "灭绝",
+                  "化石", "起源", "寒武纪", "侏罗纪", "大陆", "海洋", "深海", "地震", "火山",
+                  "冰河", "冰川", "气候", "全球变暖", "进化", "演化"]),
+    ("AI科技", ["AI", "人工智能", "大模型", "GPT", "OpenAI", "芯片", "半导体", "机器人", "量子",
+                "算法", "自动驾驶", "脑机", "核聚变", "深度学习", "神经网络", "算力"]),
+    ("财经知识", ["黄金", "金价", "股票", "股市", "A股", "美股", "港股", "基金", "理财", "央行",
+                  "利率", "降息", "加息", "汇率", "通胀", "通货膨胀", "美联储", "货币", "存款",
+                  "银行", "楼市", "房贷", "经济周期", "货币政策"]),
+    ("健康心理", ["健康", "医学", "医生", "癌症", "病毒", "疫苗", "睡眠", "抑郁", "焦虑", "心理",
+                  "心理学", "大脑", "记忆", "衰老", "免疫", "营养", "减肥", "久坐", "体检"]),
+    ("历史人文", ["历史", "考古", "文物", "出土", "遗址", "古墓", "三国", "秦朝", "汉朝", "唐朝",
+                  "宋朝", "明朝", "清朝", "皇帝", "王朝", "文明", "古籍", "甲骨", "敦煌", "兵马俑"]),
+    ("生活百科", ["科普", "冷知识", "为什么", "原理", "常识", "数学", "物理", "化学", "生物",
+                  "动物", "植物", "昆虫", "宇宙未知"]),
 ]
 
 
@@ -72,6 +94,7 @@ class HotItem(BaseModel):
     platforms: list[str] = []  # 同标题出现的所有平台
     direction_ids: list[str] = []
     match_keywords: list[str] = []
+    subtopics: list[str] = []  # 内置科普频道命中的子话题（宇宙地球/AI科技/…）
 
 
 class HotDirection(BaseModel):
@@ -108,6 +131,24 @@ class SourceStatus(BaseModel):
     count: int = 0
     error: str = ""
     fetched_at: str = ""
+
+
+# 工具仓库受众启发式（AI 解读前的兜底标签，AI 结果会覆盖它）
+TOOL_AUDIENCE_RULES: list[tuple[str, list[str]]] = [
+    ("程序员", ["cli", "terminal", "framework", "library", "sdk", "开发", "代码", "编译", "docker", "kubernetes", "rust", "python", "typescript", "golang", "debug"]),
+    ("硬件工程师", ["embedded", "固件", "单片机", "mcu", "arduino", "raspberry", "pcb", "firmware", "iot", "esp32"]),
+    ("产品经理", ["low-code", "nocode", "原型", "prototype", "dashboard", "看板", "图表", "报表", "需求", "diagram", "白板", "流程图", "flow"]),
+    ("运营·自媒体", ["seo", "marketing", "营销", "写作", "文案", "运营", "自媒体", "短视频", "小红书", "公众号", "content", "social", "直播"]),
+    ("行政·办公", ["excel", "办公", "文档", "office", "notion", "日历", "日程", "审批", "报销", "发票", "workflow", "自动化", "ocr", "pdf", "翻译"]),
+    ("设计师", ["design", "figma", " ui ", "uikit", "ui kit", "icon", "插画", "illustration", "photoshop", "渲染", "配色", "font", "字体", "3d"]),
+]
+
+
+def guess_audience(summary: str, lang: str) -> list[str]:
+    """AI 解读前按描述/语言猜受众标签，保证工具栏目开箱即有内容。"""
+    text = f" {summary} {lang} ".lower()  # 前后补空格，避免 ui/design 等短词误命中子串
+    hits = [aud for aud, kws in TOOL_AUDIENCE_RULES if any(k in text for k in kws)]
+    return hits[:3] or ["全员通用"]
 
 
 # ---- 工具 ----
@@ -223,6 +264,20 @@ def match_directions(item: HotItem, directions: list[HotDirection]) -> None:
         if hits:
             item.direction_ids.append(d.id)
             item.match_keywords.extend(hits)
+
+
+def match_channels(item: HotItem) -> None:
+    """内置科普频道匹配：标题命中任一子话题词表即视为科普/知识内容。
+
+    GitHub 仓库属于工具栏目，不参与科普归类。
+    """
+    item.subtopics = []
+    if item.platform == "github":
+        return
+    title = item.title.lower()
+    for name, kws in SCIENCE_TOPICS:
+        if any(k.lower() in title for k in kws):
+            item.subtopics.append(name)
 
 
 # ---- 存储层 ----
@@ -364,6 +419,30 @@ class HotspotStore:
         payload = {"topics": [t.model_dump() for t in topics]}
         with self._lock:
             self._topics_path().write_text(
+                json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8"
+            )
+
+    # -- 工具解读缓存（按仓库名，跨轮次/重启复用，省 token） --
+
+    @staticmethod
+    def _tools_meta_path() -> Path:
+        return HOTSPOT_DIR / "tools_meta.json"
+
+    def load_tools_meta(self) -> dict[str, dict]:
+        p = self._tools_meta_path()
+        if not p.exists():
+            return {}
+        try:
+            return json.loads(p.read_text(encoding="utf-8")).get("tools", {})
+        except Exception as e:  # noqa: BLE001
+            log.warning("tools_meta.json 损坏，忽略： %s", e)
+            return {}
+
+    def save_tools_meta(self, meta: dict[str, dict]) -> None:
+        HOTSPOT_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {"updated_at": _iso(_now()), "tools": meta}
+        with self._lock:
+            self._tools_meta_path().write_text(
                 json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8"
             )
 
@@ -531,6 +610,7 @@ class HotspotService:
             item.platforms = plats
             item.cross_platform = len(set(plats)) >= 2
             match_directions(item, directions)
+            match_channels(item)
             item.burst = compute_burst(item.trend, item.hot, item.first_seen, item.cross_platform)
 
         # 状态瘦身：超过 7 天且本轮没再出现的热点不再保留历史
@@ -702,40 +782,22 @@ class HotspotService:
 
     # -- 每日早报 --
 
-    def briefing(self, top_n: int = 5) -> dict:
-        """今日早报：Top N 值得马上拍的热点 + 规则生成的理由（快、稳、不依赖 LLM）。"""
+    def briefing(self, top_n: int = BRIEF_TOP_N) -> dict:
+        """今日早报：三个栏目（实时热点 / 科普知识 / 工具分享），规则生成、不依赖 LLM。"""
         with self._lock:
             items = list(self._latest)
         items.sort(key=lambda x: (-x.burst, -x.hot))
         now_dt = _now()
 
-        def reason(i: HotItem) -> str:
-            parts = []
-            plats = [sources.PLATFORM_NAMES.get(p, p) for p in set(i.platforms)]
-            if len(plats) >= 2:
-                parts.append(f"{'、'.join(plats[:3])}多平台同时上榜，大事件信号")
-            dt = _parse_iso(i.first_seen)
-            if dt:
-                age_min = (now_dt - dt).total_seconds() / 60
-                if i.trend == "new":
-                    parts.append(
-                        f"刚上榜（{int(age_min)} 分钟前首见），首发窗口正开"
-                    )
-                elif i.trend == "up":
-                    parts.append(f"热度还在涨（+{i.trend_delta}%），跟进入场不晚")
-            if i.tag and i.tag not in ("", "新"):
-                parts.append(f"平台标记「{i.tag}」")
-            if not parts:
-                parts.append("持续霸榜，可做长尾解读")
-            return "；".join(parts[:2])
-
+        # 实时热点：国内平台热点（GitHub 仓库归工具栏目）
+        hot_pool = [i for i in items if i.platform != "github"]
         fresh_24h = sum(
             1
-            for i in items
+            for i in hot_pool
             if (dt := _parse_iso(i.first_seen)) and (now_dt - dt).total_seconds() < 86400
         )
         top = []
-        for i in items[: max(1, min(10, top_n))]:
+        for i in hot_pool[: max(1, min(BRIEF_TOP_N, top_n))]:
             top.append(
                 {
                     "id": i.id,
@@ -749,9 +811,11 @@ class HotspotService:
                     "cross": i.cross_platform,
                     "platforms": [sources.PLATFORM_NAMES.get(p, p) for p in i.platforms],
                     "search_url": i.search_url,
-                    "reason": reason(i),
+                    "reason": _hot_reason(i, now_dt),
                 }
             )
+        science = self._science_section(hot_pool, top_n, now_dt)
+        tools = self.tools_section(top_n)
         src_ok = [
             s
             for s in (self._state.get("sources") or {}).values()
@@ -776,12 +840,16 @@ class HotspotService:
         return {
             "generated_at": _iso(now_dt),
             "items": top,
+            "science": science,
+            "tools": tools,
             "stats": {
                 "total": len(items),
                 "fresh_24h": fresh_24h,
                 "sources_ok": len(src_ok),
                 "sources_total": len(sources.FETCHERS),
                 "avg_burst": avg_burst,
+                "science_total": science["total"],
+                "tools_total": tools["total"],
                 **({"overlap_pct": overlap_pct} if overlap_pct is not None else {}),
                 "directions": [
                     {"id": k, "name": dir_name_map.get(k, k), "count": v}
@@ -798,12 +866,137 @@ class HotspotService:
             },
         }
 
+    def _science_section(self, pool: list[HotItem], top_n: int, now_dt: datetime) -> dict:
+        """科普栏目：命中内置科普子话题的热点，按第一波指数排序。"""
+        science = [i for i in pool if i.subtopics]
+        science.sort(key=lambda x: (-x.burst, -x.hot))
+        sub_counts: dict[str, int] = {}
+        for i in science:
+            for s in i.subtopics:
+                sub_counts[s] = sub_counts.get(s, 0) + 1
+        out = []
+        for i in science[: max(1, min(BRIEF_TOP_N, top_n))]:
+            out.append(
+                {
+                    "id": i.id,
+                    "title": i.title,
+                    "platform": sources.PLATFORM_NAMES.get(i.platform, i.platform),
+                    "burst": i.burst,
+                    "trend": i.trend,
+                    "trend_delta": i.trend_delta,
+                    "raw_hot": i.raw_hot or str(int(i.hot)),
+                    "cross": i.cross_platform,
+                    "platforms": [sources.PLATFORM_NAMES.get(p, p) for p in i.platforms],
+                    "search_url": i.search_url,
+                    "subtopics": i.subtopics,
+                    "reason": f"「{'、'.join(i.subtopics[:2])}」知识方向；{_hot_reason(i, now_dt)}",
+                }
+            )
+        return {
+            "generated_at": _iso(now_dt),
+            "total": len(science),
+            "subtopics": [
+                {"name": k, "count": v}
+                for k, v in sorted(sub_counts.items(), key=lambda x: -x[1])[:6]
+            ],
+            "items": out,
+        }
+
+    def tools_section(self, top_n: int = BRIEF_TOP_N) -> dict:
+        """工具栏目：GitHub 热门仓库 + 受众/用途解读（AI 缓存优先，启发式兜底）。"""
+        with self._lock:
+            items = [i for i in self._latest if i.platform == "github"]
+        items.sort(key=lambda x: (-x.hot, -x.burst))
+        meta = self.store.load_tools_meta()
+        out = []
+        for i in items[: max(1, min(20, top_n))]:
+            m = meta.get(normalize_title(i.title)) or {}
+            out.append(
+                {
+                    "id": i.id,
+                    "title": i.title,
+                    "url": i.url or f"https://github.com/{i.title}",
+                    "summary": i.summary,
+                    "language": i.tag,
+                    "stars": i.raw_hot,
+                    "burst": i.burst,
+                    "trend": i.trend,
+                    "audience": m.get("audience") or guess_audience(i.summary, i.tag),
+                    "use": str(m.get("use") or ""),
+                    "why": str(m.get("why") or ""),
+                    "ai_done": bool(m.get("use")),
+                }
+            )
+        src_ok = any(
+            isinstance(s, dict) and s.get("platform") == "github" and s.get("ok")
+            for s in (self._state.get("sources") or {}).values()
+        )
+        return {
+            "generated_at": self._state.get("last_refresh", ""),
+            "total": len(items),
+            "source_ok": src_ok,
+            "items": out,
+        }
+
+    def merge_tools_meta(self, results: list[dict]) -> int:
+        """AI 解读结果按仓库名落盘缓存（只认当前在榜仓库，防幻觉）；返回新缓存数。"""
+        with self._lock:
+            known = {
+                normalize_title(i.title)
+                for i in self._latest
+                if i.platform == "github"
+            }
+        meta = self.store.load_tools_meta()
+        now_s = _iso(_now())
+        added = 0
+        for r in results:
+            if not isinstance(r, dict):
+                continue
+            key = normalize_title(str(r.get("ref") or ""))
+            if not key or key not in known:
+                continue
+            audience = [
+                str(a).strip()[:12]
+                for a in (r.get("audience") or [])
+                if str(a).strip()
+            ][:4]
+            meta[key] = {
+                "audience": audience or ["全员通用"],
+                "use": str(r.get("use") or "").strip()[:80],
+                "why": str(r.get("why") or "").strip()[:80],
+                "at": now_s,
+            }
+            added += 1
+        if added:
+            self.store.save_tools_meta(meta)
+        return added
+
 
 def _raw_hot(r: dict) -> float | None:
     v = r.get("hot")
     if isinstance(v, (int, float)) and v > 0:
         return float(v)
     return None
+
+
+def _hot_reason(i: HotItem, now_dt: datetime) -> str:
+    """早报条目的入选理由（实时热点/科普栏目共用）。"""
+    parts = []
+    plats = [sources.PLATFORM_NAMES.get(p, p) for p in set(i.platforms)]
+    if len(plats) >= 2:
+        parts.append(f"{'、'.join(plats[:3])}多平台同时上榜，大事件信号")
+    dt = _parse_iso(i.first_seen)
+    if dt:
+        age_min = (now_dt - dt).total_seconds() / 60
+        if i.trend == "new":
+            parts.append(f"刚上榜（{int(age_min)} 分钟前首见），首发窗口正开")
+        elif i.trend == "up":
+            parts.append(f"热度还在涨（+{i.trend_delta}%），跟进入场不晚")
+    if i.tag and i.tag not in ("", "新"):
+        parts.append(f"平台标记「{i.tag}」")
+    if not parts:
+        parts.append("持续霸榜，可做长尾解读")
+    return "；".join(parts[:2])
 
 
 # 模块级单例（routers 引用）

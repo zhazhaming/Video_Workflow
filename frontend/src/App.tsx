@@ -12,6 +12,7 @@ import {
   saveScript,
 } from "./api";
 import { FlowPanel } from "./components/FlowPanel";
+import { HotMusic } from "./components/HotMusic";
 import { HotspotRadar } from "./components/HotspotRadar";
 import { PublishPanel } from "./components/PublishPanel";
 import type {
@@ -22,7 +23,7 @@ import type {
 } from "./types";
 
 type View = { kind: "list" } | { kind: "detail"; pid: string };
-type ListTab = "projects" | "radar";
+type ListTab = "projects" | "radar" | "music";
 
 // ---- 本地编辑草稿（刷新/误关保护）：按项目存 localStorage ----
 
@@ -415,6 +416,12 @@ export const App = () => {
               🔥 热点雷达
               {radarAlerts > 0 && <span className="tab-dot" title={`${radarAlerts} 条新爆热点`} />}
             </button>
+            <button
+              className={`tab ${listTab === "music" ? "tab-active" : ""}`}
+              onClick={() => setListTab("music")}
+            >
+              🎵 热门歌曲
+            </button>
           </div>
           <button className="btn primary" disabled={creating} onClick={newProject}>
             {creating ? "创建中..." : "+ 新建视频项目"}
@@ -492,7 +499,7 @@ export const App = () => {
               )}
             </div>
           </>
-        ) : (
+        ) : listTab === "radar" ? (
           <HotspotRadar
             models={models}
             onUseTopic={useTopicInNewProject}
@@ -500,6 +507,8 @@ export const App = () => {
             onAlertCount={setRadarAlerts}
             onGenerateScript={generateScriptFromTopic}
           />
+        ) : (
+          <HotMusic />
         )}
       </div>
     );

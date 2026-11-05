@@ -110,12 +110,36 @@ def test_match_directions(svc):
     assert item3.direction_ids == []
 
 
+# ---- 科普频道（早报科普栏目） ----
+
+
+def test_match_channels():
+    item = hs.HotItem(id="x", platform="zhihu", title="地球起源的真相")
+    hs.match_channels(item)
+    assert "宇宙地球" in item.subtopics
+
+    item2 = hs.HotItem(id="y", platform="zhihu", title="明星官宣离婚")
+    hs.match_channels(item2)
+    assert item2.subtopics == []  # 娱乐内容不进科普栏目
+
+    gh = hs.HotItem(id="z", platform="github", title="earth/geo-tool")
+    hs.match_channels(gh)
+    assert gh.subtopics == []  # GitHub 工具源不参与科普归类
+
+
+def test_guess_audience():
+    assert "行政·办公" in hs.guess_audience("Automate excel reports and pdf OCR", "Python")
+    assert "程序员" in hs.guess_audience("A react component framework", "TypeScript")
+    assert hs.guess_audience("random stuff", "") == ["全员通用"]
+
+
 # ---- 源解析器（fixture 响应） ----
 
 
 class _FakeResp:
     def __init__(self, payload):
         self._payload = payload
+        self.text = payload if isinstance(payload, str) else ""
 
     def raise_for_status(self):
         return None
@@ -130,6 +154,19 @@ class _FakeClient:
 
     def get(self, *a, **kw):
         return _FakeResp(self._payload)
+
+
+class _RouteClient:
+    """按 URL 关键词返回不同 payload 的假 httpx 客户端。"""
+
+    def __init__(self, routes: dict):
+        self._routes = routes
+
+    def get(self, url, *a, **kw):
+        for key, payload in self._routes.items():
+            if key in url:
+                return _FakeResp(payload)
+        raise AssertionError(f"unexpected url: {url}")
 
 
 def test_parse_douyin():
@@ -189,6 +226,54 @@ def test_parse_bilibili():
     assert len(items) == 2
     assert items[0]["title"] == "B站热词"
     assert items[0]["hot"] is None  # score=0 → 无数值
+
+
+# ---- GitHub Trending（工具分享源） ----
+
+_GITHUB_HTML = """<html><body>
+<article class="Box-row">
+  <h2 class="h3 lh-condensed"><a href="/vercel/ai" class="Link">vercel / ai</a></h2>
+  <p class="col-9 color-fg-muted my-1 pr-4">Build AI-powered applications.</p>
+  <div class="f6 color-fg-muted mt-2">
+    <span itemprop="programmingLanguage">TypeScript</span>
+    <a class="Link--muted d-inline-block mr-3" href="/vercel/ai/stargazers">12,345</a>
+    <span class="d-inline-block float-sm-right">1,234 stars today</span>
+  </div>
+</article>
+<article class="Box-row">
+  <h2 class="h3 lh-condensed"><a href="/admin/excel-bot">excel-bot</a></h2>
+  <p class="col-9 color-fg-muted my-1 pr-4">Excel automation for office teams.</p>
+  <div class="f6 color-fg-muted mt-2">
+    <span itemprop="programmingLanguage">Python</span>
+    <a class="Link--muted" href="/admin/excel-bot/stargazers">500</a>
+  </div>
+</article>
+</body></html>"""
+
+
+def test_parse_github_trending():
+    items = sources._parse_trending_html(_GITHUB_HTML)
+    assert [i["title"] for i in items] == ["vercel/ai", "admin/excel-bot"]
+    assert items[0]["hot"] == 1234.0  # 有「今日星」优先用今日星
+    assert items[0]["tag"] == "TypeScript"
+    assert "12.3k" in items[0]["raw_hot"] and "今日" in items[0]["raw_hot"]
+    assert items[0]["url"] == "https://github.com/vercel/ai"
+    assert items[1]["hot"] == 500.0  # 无今日星 → 退回总星数
+
+
+def test_fetch_github_fallback_to_api():
+    client = _RouteClient({
+        "trending": "<html>页面改版解析不出任何 Box-row</html>",
+        "search/repositories": {"items": [
+            {"full_name": "acme/new-tool", "stargazers_count": 42,
+             "language": "Go", "description": "CLI for admins",
+             "html_url": "https://github.com/acme/new-tool"},
+        ]},
+    })
+    items = sources.fetch_github(client)
+    assert items[0]["title"] == "acme/new-tool"
+    assert items[0]["hot"] is None  # API 兜底无数值 → 服务层排名代理
+    assert "42" in items[0]["raw_hot"]
 
 
 # ---- 服务编排（两轮抓取 → 趋势/共振/方向/筛选） ----
@@ -282,11 +367,13 @@ def test_state_backup_and_fallback(svc):
 @pytest.fixture
 def client(monkeypatch, hs_env):
     # 独立 app，不触发 main.py 的 startup（避免真实抓取）
+    hotspot_router._ai_briefing_cache.clear()  # 模块级点评缓存不跨测试
     app = FastAPI()
     app.include_router(hotspot_router.router)
     items = [
         hs.HotItem(id="a1", platform="douyin", title="AI热点", burst=88, hot=90,
-                   direction_ids=["d1"], first_seen=_iso_now(), last_seen=_iso_now()),
+                   direction_ids=["d1"], subtopics=["AI科技"],
+                   first_seen=_iso_now(), last_seen=_iso_now()),
         hs.HotItem(id="a2", platform="baidu", title="民生热点", burst=50, hot=40,
                    first_seen=_iso_now(), last_seen=_iso_now()),
     ]
@@ -395,6 +482,59 @@ def test_service_briefing(svc, monkeypatch):
     assert b["stats"]["sources_ok"] == 1
 
 
+def test_service_briefing_sections(svc, monkeypatch):
+    monkeypatch.setattr(sources, "fetch_all", lambda platforms=None: {
+        "douyin": [_raw("地球起源之谜", hot=900000), _raw("明星官宣离婚", hot=800000)],
+        "github": [
+            {"title": "vercel/ai", "url": "https://github.com/vercel/ai", "hot": 1234,
+             "raw_hot": "⭐12.3k · 今日+1.2k", "tag": "TypeScript", "summary": "Build AI apps"},
+            {"title": "admin/excel-bot", "url": "", "hot": None,
+             "raw_hot": "⭐500", "tag": "Python", "summary": "Excel automation"},
+        ],
+    })
+    svc.refresh()
+    b = svc.briefing(3)
+    # 实时热点栏目：只含国内平台热点，GitHub 不混入
+    hot_titles = {i["title"] for i in b["items"]}
+    assert "地球起源之谜" in hot_titles and "明星官宣离婚" in hot_titles
+    assert all(i["platform"] != "GitHub" for i in b["items"])
+    # 科普栏目：命中词表的在榜，娱乐的不在
+    sci = b["science"]
+    assert [i["title"] for i in sci["items"]] == ["地球起源之谜"]
+    assert "宇宙地球" in sci["items"][0]["subtopics"]
+    assert sci["items"][0]["reason"].startswith("「宇宙地球」")
+    assert sci["total"] == 1
+    # 工具栏目：GitHub 仓库 + 启发式受众兜底
+    tools = b["tools"]
+    assert tools["items"][0]["title"] == "vercel/ai"  # 今日星更高 → 排前
+    assert tools["items"][0]["audience"] == ["程序员"]
+    assert "行政·办公" in tools["items"][1]["audience"]  # excel 命中行政，Python 同时命中程序员
+    assert tools["items"][0]["ai_done"] is False
+    assert tools["source_ok"] is True
+
+
+def test_tools_meta_merge_and_cache(svc, monkeypatch):
+    monkeypatch.setattr(sources, "fetch_all", lambda platforms=None: {
+        "github": [
+            {"title": "vercel/ai", "url": "https://github.com/vercel/ai", "hot": 1234,
+             "raw_hot": "⭐12.3k", "tag": "TypeScript", "summary": "Build AI apps"},
+        ],
+    })
+    svc.refresh()
+    added = svc.merge_tools_meta([
+        {"ref": "vercel/ai", "audience": ["程序员", "产品经理"], "use": "AI 应用开发套件", "why": "生态成熟"},
+        {"ref": "ghost/not-in-trending", "audience": ["程序员"], "use": "x", "why": "y"},  # 不在榜 → 忽略
+    ])
+    assert added == 1
+    item = svc.tools_section(5)["items"][0]
+    assert item["use"] == "AI 应用开发套件"
+    assert item["audience"] == ["程序员", "产品经理"]
+    assert item["ai_done"] is True
+    # 落盘持久化，重启后仍可读
+    meta = svc.store.load_tools_meta()
+    assert meta[hs.normalize_title("vercel/ai")]["why"] == "生态成熟"
+
+
 def test_route_ai_briefing_cache(client, monkeypatch):
     calls = {"n": 0}
 
@@ -409,6 +549,54 @@ def test_route_ai_briefing_cache(client, monkeypatch):
     r2 = client.post("/api/hotspot/ai-briefing")  # 缓存命中
     assert calls["n"] == 1
     assert r2.json()["comments"][0]["form"] == "口播"
+
+
+def test_route_ai_briefing_sections(client, monkeypatch):
+    calls = []
+
+    def fake_commentary(brief_items, model_id):
+        calls.append([b["title"] for b in brief_items])
+        return [{"ref": brief_items[0]["title"], "form": "图文", "angle": "角度", "risk": "无"}]
+
+    monkeypatch.setattr(llm, "generate_briefing_commentary", fake_commentary)
+    # 科普栏目：AI热点 命中「AI科技」子话题，独立出点评
+    r_sci = client.post("/api/hotspot/ai-briefing", params={"section": "science"})
+    assert r_sci.status_code == 200
+    assert calls[-1] == ["AI热点"]
+    body = r_sci.json()
+    assert body["science"]["items"][0]["subtopics"] == ["AI科技"]
+    # 栏目缓存独立：hot 栏目首次仍会真实调用
+    r_hot = client.post("/api/hotspot/ai-briefing", params={"section": "hot"})
+    assert r_hot.status_code == 200
+    assert calls[-1] == ["AI热点", "民生热点"]
+    assert client.post("/api/hotspot/ai-briefing", params={"section": "hot"}).status_code == 200
+    assert len(calls) == 2  # hot 第二次走缓存
+
+
+def test_route_ai_tools(client, monkeypatch):
+    items = list(hs.service._latest) + [
+        hs.HotItem(id="g1", platform="github", title="vercel/ai",
+                   url="https://github.com/vercel/ai", hot=90, burst=60,
+                   tag="TypeScript", summary="Build AI-powered apps", first_seen=_iso_now()),
+    ]
+    monkeypatch.setattr(hs.service, "_latest", items)
+    calls = {"n": 0}
+
+    def fake_meta(tools, model_id=None):
+        calls["n"] += 1
+        return [{"ref": tools[0]["name"], "audience": ["程序员"], "use": "AI 开发套件", "why": "省事"}]
+
+    monkeypatch.setattr(llm, "generate_tool_meta", fake_meta)
+    r1 = client.post("/api/hotspot/ai-tools", json={})
+    assert r1.status_code == 200
+    body = r1.json()
+    assert body["classified"] == 1
+    assert body["tools"]["items"][0]["use"] == "AI 开发套件"
+    # 同仓库第二轮直接读落盘缓存，不再调 LLM
+    r2 = client.post("/api/hotspot/ai-tools", json={})
+    assert calls["n"] == 1
+    assert r2.json()["classified"] == 0
+    assert r2.json()["tools"]["items"][0]["ai_done"] is True
 
 
 def test_briefing_overlap(svc, monkeypatch):

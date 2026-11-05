@@ -102,7 +102,7 @@ def write(path: str, data: np.ndarray) -> None:
 
 
 def main() -> None:
-    remotion_dir = os.environ.get("REMOTION_DIR", r"D:\Work\remotion-life-sim")
+    remotion_dir = os.environ.get("REMOTION_DIR", r"D:/work/Video_Workflow/remotion-engine")
     out_dir = os.path.join(remotion_dir, "public", "sfx")
     os.makedirs(out_dir, exist_ok=True)
     write(os.path.join(out_dir, "whoosh.wav"), whoosh())

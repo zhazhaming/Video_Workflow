@@ -25,7 +25,7 @@ SR = 22050
 WINDOW = 78.0
 NOMINAL_START = 8.0  # pick_gold_bgm.py 给出的最佳窗口起点
 
-REMOTION = r"D:\Work\remotion-life-sim"
+REMOTION = r"D:/work/Video_Workflow/remotion-engine"
 FF = os.path.join(REMOTION, "node_modules", "@remotion", "compositor-win32-x64-msvc", "ffmpeg.exe")
 BGM_SRC = os.path.join(REMOTION, "public", "bgm", "online_bgm.mp3")
 BGM_OUT = os.path.join(REMOTION, "public", "bgm", "gold_race_use.mp3")

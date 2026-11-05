@@ -46,7 +46,7 @@ TRANSITIONS = {"dissolve", "whip", "zoom", "flash", "cut", "glitch", "slide"}
 ATMOS_KINDS = {"none", "stars", "rain", "dust", "embers"}
 SFX_MOMENTS = {"impact", "riser", "whoosh"}
 OVERLAY_KINDS = {"counter", "typewriter", "chat", "stat", "toast", "terminal"}
-# 代码绘制动画场景（与 remotion-life-sim/src/dv/scenes.tsx 的 SCENE_KINDS 对齐）
+# 代码绘制动画场景（与 remotion-engine/src/dv/scenes.tsx 的 SCENE_KINDS 对齐）
 SCENE_KINDS = {
     "nebula", "accretion", "impact", "moonform", "solar",
     "ocean", "volcano", "ice", "meteor", "life", "city",

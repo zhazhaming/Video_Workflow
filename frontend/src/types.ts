@@ -160,11 +160,38 @@ export interface BriefingItem {
   platforms: string[];
   search_url: string;
   reason: string;
+  /** 科普栏目条目携带：命中的内置子话题 */
+  subtopics?: string[];
+}
+
+/** 早报栏目条目：科普栏目复用热点字段；工具栏目额外携带仓库解读字段 */
+export interface BriefingSectionItem extends BriefingItem {
+  url?: string;
+  summary?: string;
+  language?: string;
+  stars?: string;
+  audience?: string[];
+  use?: string;
+  why?: string;
+  ai_done?: boolean;
+}
+
+/** 早报栏目（科普/工具） */
+export interface BriefingSection {
+  generated_at: string;
+  total: number;
+  items: BriefingSectionItem[];
+  /** 科普栏目：子话题命中分布 */
+  subtopics?: { name: string; count: number }[];
+  /** 工具栏目：GitHub 源是否在线 */
+  source_ok?: boolean;
 }
 
 export interface Briefing {
   generated_at: string;
   items: BriefingItem[];
+  science?: BriefingSection;
+  tools?: BriefingSection;
   stats: {
     total: number;
     fresh_24h: number;
@@ -173,6 +200,8 @@ export interface Briefing {
     avg_burst?: number;
     /** 与上一份快照的在榜重合率（%）；不足两轮快照时省略 */
     overlap_pct?: number;
+    science_total?: number;
+    tools_total?: number;
     directions?: { id: string; name: string; count: number }[];
     platforms?: { platform: string; name: string; count: number }[];
   };
@@ -359,4 +388,60 @@ export interface PublishPackage {
 export interface DouyinStatus {
   configured: boolean;
   authorized: boolean;
+}
+
+// ---------- 热门歌曲（抖音热歌 / 音乐榜单聚合） ----------
+
+/** 单个榜单元信息（/api/music-chart/boards） */
+export interface MusicBoardInfo {
+  id: string;
+  name: string;
+  /** 抖音 | 实时 | 流派 */
+  group: string;
+  desc: string;
+  source: string;
+  /** 榜单期号（周榜 2026_44 / 日榜日期） */
+  period: string;
+  /** 榜单数据自身的更新时间 */
+  update_time: string;
+  update_tips: string;
+  intro: string;
+  listen_num: number;
+  count: number;
+  ok: boolean;
+  error: string;
+  fetched_at: string;
+}
+
+/** 单首在榜歌曲（已含跨轮名次趋势） */
+export interface MusicItem {
+  id: string;
+  board: string;
+  rank: number;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+  cover: string;
+  url: string;
+  search_url: string;
+  raw_hot: string;
+  hot: number;
+  first_seen: string;
+  last_seen: string;
+  trend: "new" | "up" | "flat" | "down";
+  /** 与上轮相比的名次变化（正=上升） */
+  rank_diff: number;
+  history: number[];
+  /** 合成榜（最热BGM榜）专用：命中的来源榜 id 列表 */
+  from_boards?: string[];
+}
+
+export interface MusicChartStatus {
+  last_refresh: string;
+  last_error: string;
+  refresh_minutes: number;
+  board_count: number;
+  song_count: number;
+  boards_ok: number;
 }

@@ -23,9 +23,18 @@ video-workflow/
     └── src/                  # 项目列表 / AI 脚本 / 分镜编辑 / 渲染面板
 ```
 
-渲染引擎复用 `D:\Work\remotion-life-sim`（不改动其原有内容，仅新增了
-props 驱动的通用组合 `DataVideo`），通过 `npx remotion render --props=...`
+渲染引擎为仓库内的 `remotion-engine/`（基于 Remotion 开源工具全新搭建，
+含 `DataVideo` / `MotionShow` 两个合成），通过 `npx remotion render --props=...`
 子进程调用。
+
+**制作路径双轨（2026-11 起）**：
+- **skill 流程（主路径）**：流程与方法论沉淀在 `.agents/skills/`（总入口 `video-producer`，
+  阶段 skill：选题 → 文案 → BGM → 配音 → 风格 → 制作）。AI agent 依据 skill 做创作判断，
+  确定性步骤直接调 `backend/tools/` 的 CLI 包装（`tts_gen.py` / `premix_track.py` /
+  `render_video.py`），无需启动后端。
+- **Web 向导（保留）**：FastAPI 六步门禁流程 + 前端 FlowPanel 原样可用（见下文启动方式），
+  两条路径共用同一套落盘契约，产物互通；skill 侧知识库是流程规则的单一事实源
+  （`.agents/skills/video-producer/references/pipeline-contracts.md`）。
 
 ## 一键启动（推荐）
 
@@ -67,7 +76,7 @@ npm run dev               # http://localhost:5173（/api 已代理到 8000）
    也可点击「⬆ 上传自定义 BGM」或「本机路径导入」添加自己的音乐（视频文件会自动抽取音轨）
 3. （可选）为分镜配置**自定义画面**：网页上传，或把豆包/Midjourney 等任何工具
    生成的图片命名为 `custom_01.png`、`custom_02.png`…（序号对应分镜）手动放到
-   `remotion-life-sim\public\pic\projects\<项目id>\` 目录。有自定义图的分镜直接使用，
+   `remotion-engine\public\pic\projects\<项目id>\` 目录。有自定义图的分镜直接使用，
    没有的自动生成渐变占位图
 4. 「开始渲染」：自动保存 → 配音 → 画面素材 → Remotion 渲染 → 在线预览/下载 MP4
 
@@ -86,7 +95,7 @@ npm run dev               # http://localhost:5173（/api 已代理到 8000）
 | CUSTOM_BASE_URL / CUSTOM_API_KEY / CUSTOM_MODEL | 任意 OpenAI 兼容接口 |
 | TTS_VOICE | edge-tts 音色（默认 zh-CN-YunjianNeural） |
 | TTS_RATE | 语速（默认 +6%） |
-| REMOTION_DIR | 渲染引擎路径（默认 D:\Work\remotion-life-sim） |
+| REMOTION_DIR | 渲染引擎路径（默认仓库内 remotion-engine/） |
 
 模型注册表在 `models.json`，`.env` 的变量通过 `${VAR}` 注入；前端 AI 面板可自助切换模型。
 
@@ -115,7 +124,7 @@ python -m pytest tests -q
   支持增删，预设 AI科技 / 影视娱乐 / 社会民生 / 游戏电竞
 - **筛选与直达**：平台筛选、多关键词过滤、按第一波指数/热度/最新排序、聚合同事件开关；
   每条热点带「去XX搜同款」直达，详情弹窗还有小红书/快手/微博**多平台分发调研**入口
-- **今日早报**：Top N + 规则理由（共振/刚上榜/上升中/平台标记），打开 10 秒决定拍什么；
+- **今日早报**：Top 15 + 规则理由（共振/刚上榜/上升中/平台标记），打开 10 秒决定拍什么；
   「🤖 AI 点评」逐条给 适合形式/拍摄角度/风险提示（按轮次缓存省 token）；附平台/方向分布统计
 - **今日选题工作台**：AI 选题生成即落库，状态流转 待拍→拍摄中→已完成，备注/批量清理/复制清单；
   「⚡ 生成脚本」一键完成 建项目 + AI 分镜生成 + 状态流转
@@ -159,7 +168,7 @@ python -m pytest tests -q
 - **字幕**：白字黑描边、逐句随配音出现，数字/引语关键词高亮，按标点自适应停顿
 - **进度条**：底部细进度条 + 片尾淡出
 
-BGM 曲库在 `remotion-life-sim\public\bgm\`。内置三首（`warm_piano` / `tense_pad` /
+BGM 曲库在 `remotion-engine\public\bgm\`。内置三首（`warm_piano` / `tense_pad` /
 `uplifting`，由 `backend/tools/gen_bgm.py` 程序化生成的无版权曲目），此外可自助扩充：
 
 - **网页导入**：AI 面板「⬆ 上传自定义 BGM」（音频或视频，视频自动抽音轨）或
@@ -181,10 +190,10 @@ BGM 曲库在 `remotion-life-sim\public\bgm\`。内置三首（`warm_piano` / `t
   或 `python -m app.services.bgm list`
 
 「人生副本」系列参考曲已导入为 `ref_theme`（来源
-`remotion-life-sim\pic\程序员-剧本人生\人生副本-参考.mp4` 抽取的完整音轨），
+参考片抽取的完整音轨），
 在项目设置里选中即可整片使用。
 
-转场音效在 `remotion-life-sim\public\sfx\`，由 `python backend\tools\gen_sfx.py` 生成
+转场音效在 `remotion-engine\public\sfx\`，由 `python backend\tools\gen_sfx.py` 生成
 （`whoosh` / `impact` / `riser`）；删除目录会导致渲染报错，重新生成即可。
 
 ## 后续路线（已预留切换点）

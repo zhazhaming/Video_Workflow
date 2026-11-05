@@ -5,6 +5,10 @@ __pycache__/
 .pytest_cache/
 frontend/node_modules/
 frontend/dist/
+remotion-engine/node_modules/
+# 渲染运行时产物（按项目生成的配音/图片，不进版本库）
+remotion-engine/public/voice/
+remotion-engine/public/pic/
 # 密钥与本地配置（models.json 含明文 api_key，用 models.example.json 作模板）
 backend/models.json
 
@@ -15,3 +19,17 @@ current_pid.txt
 *.log
 .DS_Store
 Thumbs.db
+
+# 临时调试目录与一次性产物（不入库）
+tmp/
+_tmp_mika/
+backend/remotion-engine/
+probe_tmp.txt
+probe_sse_1y.json
+tmp_comp.txt
+dy_hot_page.html
+frontend/tsconfig.tsbuildinfo
+remotion-engine/probe.cjs
+remotion-engine/probe.ts
+# 视频验收截图（本地留档，不进版本库）
+docs/audit/

@@ -2,8 +2,10 @@
 """项目路由：CRUD + 触发渲染 + 取成片 + 自定义分镜图管理。"""
 import io
 import json
+import logging
 import shutil
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -37,6 +39,8 @@ from ..services.tasks import load_script, task_manager
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
+log = logging.getLogger("projects")
+
 _CUSTOM_EXT_BY_CONTENT_TYPE = {
     "image/png": ".png",
     "image/jpeg": ".jpg",
@@ -63,11 +67,35 @@ def _paths(pid: str):
     return pdir, pdir / "script.json", pdir / "meta.json"
 
 
+def _mtime_iso(ts: float) -> str:
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _normalize_meta(meta: dict, pid: str, mtime: float | None = None) -> dict:
+    """补齐老/手工写入 meta.json 的缺失字段（id / title / created_at / updated_at）。
+
+    skill 流程或早期版本落盘的 meta.json 不一定带全字段；不补的话一条脏数据会让
+    整个项目列表 500（ProjectMeta 校验失败）。
+    """
+    out = dict(meta)
+    if not out.get("id"):
+        out["id"] = pid
+    if not out.get("title"):
+        out["title"] = out.get("topic") or pid
+    stamp = _mtime_iso(mtime) if mtime else ""
+    if not out.get("created_at"):
+        out["created_at"] = stamp
+    if not out.get("updated_at"):
+        out["updated_at"] = out.get("created_at") or stamp
+    return out
+
+
 def _load_meta(pid: str) -> dict:
     _, _, meta_path = _paths(pid)
     if not meta_path.exists():
         raise HTTPException(404, "项目不存在")
-    return json.loads(meta_path.read_text(encoding="utf-8"))
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    return _normalize_meta(meta, pid, meta_path.stat().st_mtime)
 
 
 @router.get("", response_model=list[ProjectMeta])
@@ -78,7 +106,11 @@ def list_projects():
         for p in sorted(PROJECTS_DIR.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
             meta_path = p / "meta.json"
             if meta_path.exists():
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                try:
+                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                except Exception as e:  # noqa: BLE001
+                    log.warning("跳过无法解析的项目 meta：%s（%s）", meta_path, e)
+                    continue
                 # 轻量统计：分镜/台词数 + 是否已出片（列表页卡片直接展示）
                 try:
                     script = json.loads((p / "script.json").read_text(encoding="utf-8"))
@@ -88,7 +120,15 @@ def list_projects():
                 except Exception:  # noqa: BLE001
                     pass
                 meta["has_video"] = (RENDERS_DIR / p.name / "final.mp4").exists()
-                items.append(ProjectMeta.model_validate(meta))
+                try:
+                    items.append(
+                        ProjectMeta.model_validate(
+                            _normalize_meta(meta, p.name, meta_path.stat().st_mtime)
+                        )
+                    )
+                except Exception as e:  # noqa: BLE001
+                    # 单条坏数据只跳过，不拖垮整个列表
+                    log.warning("跳过无法解析的项目 meta：%s（%s）", meta_path, e)
     return items
 
 

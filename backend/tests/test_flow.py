@@ -298,20 +298,21 @@ def test_mix_line_track_schedule_and_file(track_env):
     out = voice.mix_line_track("p1", _props_dict())
     assert out["src"] == "voice/projects/p1/track.wav"
     assert (track_env / "track.wav").exists()
-    # 无节拍：offset=2.0（片头兜底）+ LEAD 0.9 → 第一句 2.9s；第二句 = 2.9+1.0+0.85 = 4.75
+    # 无节拍：offset=2.0（片头兜底）+ LEAD 0.45 → 第一句 2.45s；
+    # 第二句 = 2.45+1.0+(0.4+0.12)=3.97
     at = {s["line"]: s["at"] for s in out["schedule"]}
-    assert at["s01_0"] == pytest.approx(2.9, abs=0.01)
-    assert at["s01_1"] == pytest.approx(4.75, abs=0.01)
+    assert at["s01_0"] == pytest.approx(2.45, abs=0.01)
+    assert at["s01_1"] == pytest.approx(3.97, abs=0.01)
 
 
 def test_mix_line_track_snaps_to_beats(track_env):
-    """节拍吸附作用于场景起点：第二幕布局起点 2.5s 吸附到 2.8s（差 0.3 内）。"""
+    """节拍吸附作用于场景起点：第二幕布局起点 2.3s，吸到 2.3s 拍。"""
     props = {
         "title": "t",
         "title_card": True,
-        "bgm": {"src": "bgm/x.mp3", "volume": 0.3, "beats": [2.8]},
+        "bgm": {"src": "bgm/x.mp3", "volume": 0.3, "beats": [2.0, 2.3]},
         "shots": [
-            {"enter_transition": "dissolve", "tail": 0.6,
+            {"enter_transition": "dissolve", "tail": 0.85,
              "lines": [{"id": "s01_0", "text": "a", "duration_sec": 1.0, "pause_after": None,
                         "audio": "voice/projects/p1/s01_0.wav"}]},
             {"enter_transition": "dissolve", "tail": 0.6,
@@ -321,9 +322,9 @@ def test_mix_line_track_snaps_to_beats(track_env):
     }
     out = voice.mix_line_track("p1", props)
     at = {s["line"]: s["at"] for s in out["schedule"]}
-    assert at["s01_0"] == pytest.approx(2.9, abs=0.01)
-    # 布局起点 0.9+1.0+0.6=2.5 → 吸附到节拍 2.8；clamp(earliest=2.5-0.53+0.3=2.27) 不再抬高
-    assert at["s02_0"] == pytest.approx(2.0 + 2.8 + 0.9, abs=0.01)
+    assert at["s01_0"] == pytest.approx(2.45, abs=0.01)
+    # 布局起点 0.45+1.0+0.85=2.3，正好落在 2.3 拍；offset 2.0 + 2.3 + LEAD 0.45
+    assert at["s02_0"] == pytest.approx(4.75, abs=0.01)
 
 
 def test_mix_line_track_no_leading_silence_hole(track_env):
@@ -334,8 +335,8 @@ def test_mix_line_track_no_leading_silence_hole(track_env):
     sr = 44100
     win = int(0.05 * sr)
     env = [float(np.sqrt(np.mean((x[i:i+win] ** 2)))) for i in range(0, len(x) - win, win)]
-    # 第一句窗口 2.9s-3.9s（1.0s 文件）：内部不允许出现 >0.3s 的静音洞
-    seg = env[int(3.0 / 0.05):int(3.9 / 0.05)]
+    # 第一句窗口 2.45s-3.45s（1.0s 文件）：内部不允许出现 >0.3s 的静音洞
+    seg = env[int(2.5 / 0.05):int(3.4 / 0.05)]
     run = longest = 0
     for v in seg:
         run = run + 1 if v < 0.01 else 0

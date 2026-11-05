@@ -10,7 +10,7 @@ BPM=120：拍=0.5s，小节=2s，1 小节=1 年。
   bar 34-37  片尾：领奖台重击 + 金色钟琴 + 收束
 卡点表（秒，与 src/gold-race/data.ts 的 MUSIC_HITS 一致）：
   6, 26, 30, 36, 40, 44, 54, 62, 64, 66, 68, 74
-输出：remotion-life-sim/public/bgm/gold_race_bgm.mp3
+输出：remotion-engine/public/bgm/gold_race_bgm.mp3
 """
 import os
 import subprocess
@@ -431,7 +431,7 @@ def write_wav(path: str, data: np.ndarray) -> None:
 
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
-    remotion_dir = os.environ.get("REMOTION_DIR", r"D:\Work\remotion-life-sim")
+    remotion_dir = os.environ.get("REMOTION_DIR", r"D:/work/Video_Workflow/remotion-engine")
     out_dir = os.path.join(remotion_dir, "public", "bgm")
     os.makedirs(out_dir, exist_ok=True)
     wav_path = os.path.join(out_dir, "gold_race_bgm.wav")
