@@ -951,3 +951,18 @@ headless 默认、16 种错误码且仅 `disposition.retry=safe` 可重试。
 - 契约同步：pipeline-contracts.md 新增 §8（research/facts_audit/acceptance/publish_log schema），
   §7 交付基线写明「事实=硬闸门、视觉=建议级」；video-production SKILL 第 6 步与 acceptance.md
   加工具闸门节；video-producer SKILL 六阶段表 stage-6 产物更新。
+
+## 二十、2026-11-08 热曲 BGM 接入方案 + 时间轴精化
+
+- 用户要下载抖音热曲「nynasty」做 BGM：查证为 MIIA《Dynasty》（商业版权曲目），
+  抖音站内曲库授权不覆盖外部管线烘焙 → 不做扒取。给出三条合规路径：
+  A) 渲无 BGM 版 + 站内/剪映原生选曲（推荐，热曲原生音源有流量加权）；
+  B) 正版授权后用户自备音频文件接管线；C) 生成器风格仿制。
+  已产出：`final_nobgm.mp4`（54.2s，QA pass 6/6 落拍）+ `cut_guide.json`
+  （切镜硬时刻 + 事件重锤时刻，剪映对齐用）+ `props_nobgm.json`。
+- 发现 tools/build_props.py 已升级为按标点表逐句停顿（契约 §3 正确做法），
+  时间轴从 61.6s 精化到 54.2s：BGM 按新事件时刻重生成（8 事件，59.7s）、
+  V3 final 重渲（QA pass 6/6 落拍、0 黑帧）、封面更新。
+- 修链路 bug：premix 的 Pydantic 往返会丢弃未知字段 → RenderProps 增加
+  `scene_starts`（sceneStarts）可选字段并同步 pipeline-contracts.md，
+  build→premix 全链路保留（qa_report/卡点对齐消费）。

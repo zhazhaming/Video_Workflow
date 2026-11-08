@@ -1066,7 +1066,7 @@ export const FlowPanel: React.FC<Props> = ({ pid, modelId, onTaskChange }) => {
       <label className="row" style={{ alignItems: "center", gap: 8, cursor: "pointer" }}>
         <input
           type="checkbox"
-          checked={!!settings?.gen_scenes}
+          checked={settings?.gen_scenes !== false}
           disabled={busy}
           onChange={(e) => toggleGenScenes(e.target.checked)}
         />

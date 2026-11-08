@@ -536,22 +536,14 @@ SHOT_DIRECTOR_SYSTEM = """你是资深短视频剪辑导演，正在为竖屏口
 shots 数量必须严格等于输入镜头数量，顺序一一对应。
 
 字段语义（发挥导演功力，不要千镜一面）：
-1. scene（代码绘制动画场景，本镜画面的主体！）：当台词内容命中下列意象时必须使用，让画面"演出来"而不是一张静图：
-   {"kind":"nebula"} 星云弥漫（宇宙/星尘/混沌起源/宏大背景）
-   {"kind":"accretion"} 粒子汇聚成球（诞生/凝聚/形成/从无到有——如地球诞生）
-   {"kind":"impact"} 天体碰撞白闪+碎片飞溅（大碰撞/撞击/冲突爆发/变革时刻）
-   {"kind":"moonform"} 碎片环绕凝聚成月（卫星形成/碎片重聚/失而复得）
-   {"kind":"solar"} 太阳系公转轨道（太阳系/行星/秩序运转/体系）
-   {"kind":"ocean"} 深海波浪落雨（海洋/雨季/情绪低谷/眼泪/湿润）
-   {"kind":"volcano"} 火山喷发粒子（火山/爆发/愤怒/释放/大气形成）
-   {"kind":"ice"} 冰封星球暴雪（冰期/极寒/冰封/绝望低谷）
-   {"kind":"meteor"} 流星撞击+灰烬（灭绝/灾难降临/末日/终结）
-   {"kind":"life"} 绿色大陆蔓延+气泡（生命/繁盛/复苏/希望生长）
-   {"kind":"city"} 城市夜景灯光+卫星（现代/都市/人类文明/今天）
-   可带参数：{"kind":"impact","palette":["#1a1030","#3a1c10"],"accent":"#ff9a3d","speed":1.2}
-   （palette 两色贴台词情绪；speed 0.5~2；相邻镜头不要用相同 kind，除非叙事确实连续）
-   注意：scene 镜头 grade.tintOpacity 建议 0.1~0.2 保持场景通透
-2. camera（本镜主运镜，作用于图片/占位镜头；scene 镜头运镜退化为整体缓动，仍建议给以保持节奏）：
+1. scene（代码绘制动画场景，本镜画面的主体！）：只允许 null 或 {"kind":"gen:<项目id>:<序号>"}——
+   gen 场景由本地 agent 在制作阶段为台词现场编写（注册表：remotion-engine/src/gen/registry.ts）。
+   若输入给出了【可用 gen 场景清单】，按台词意象就近选用（相邻镜头不要用相同 kind），可带参数：
+   {"kind":"gen:<pid>:<NN>","palette":["#1a1030","#3a1c10"],"accent":"#ff9a3d","speed":1.2}
+   （palette 两色贴台词情绪；speed 0.5~2）
+   没有清单或没有贴切的场景就写 null——引擎只认 gen: 前缀，其他 kind 一律忽略并回退渐变图，
+   编造不存在的场景 kind 等于白编。scene 镜头 grade.tintOpacity 建议 0.1~0.2 保持画面通透
+2. camera（本镜主运镜，作用于图片/占位/场景镜头）：
    push=缓推（走近/强调），pull=缓拉（抽离/释然），pan_left/pan_right=横摇（并列/环境），
    tilt_up/tilt_down=上下摇（压迫/仰望），diag_in/diag_out=斜推斜拉（动感/失控），
    dolly_zoom=滑动变焦（眩晕/震惊/违和感爆发），handheld=手持晃动（纪实/慌乱/真实感），still=静止（冷静/定格/沉重）。
@@ -673,9 +665,10 @@ def _shot_digest(s, i: int) -> str:
 FROM_SCRATCH_RULE = """
 
 【本片与模板领域无关（from_scratch 模式）——硬性禁令】
-1. scene 一律 null：禁止使用任何代码绘制场景（行星/太阳系/星云/海洋/城市等模板意象）。
+1. scene 只允许 null 或 gen:<项目id>:<序号>（本项目现场编写的定制场景）；
+   禁止行星/太阳系/星云/海洋/城市等模板场景 kind（引擎会忽略并回退渐变图）。
 2. atmosphere 禁止 "stars"（星空）；需要氛围时只用 none/rain/dust/embers。
-3. 画面主体交给配图、配色与构图动效表达；运镜/转场/调色/浮层等通用手段照常用足。"""
+3. 画面主体交给 gen 场景、配图、配色与构图动效表达；运镜/转场/调色/浮层等通用手段照常用足。"""
 
 
 def _with_mode(system_prompt: str, template_mode: str | None) -> str:
@@ -685,21 +678,21 @@ def _with_mode(system_prompt: str, template_mode: str | None) -> str:
     return system_prompt
 
 
-RELEVANCE_SYSTEM = """你是模板资产审核员。判断一部竖屏口播视频的选题，与现有视频模板库是否相关。
+RELEVANCE_SYSTEM = """你是模板资产审核员。判断一部竖屏口播视频的选题，与渲染引擎的内置能力是否相关。
 
-模板库内置的"代码绘制动画场景"属于行星/宇宙/地球演化领域：太阳系、星云、粒子汇聚成球、
-天体碰撞、卫星形成、深海、火山、冰期、陨石灭绝、生命演化、现代都市夜景；
-另有通用的运镜/转场/字幕/调色/颗粒/BGM 词表与占位图规则。
+渲染引擎现状：没有内置领域场景（旧的行星/宇宙/地球演化代码场景库已删除，不存在了）。
+scene 只支持 gen:<pid>:<NN>（由本地 agent 为本片现场编写的定制场景）；
+另有通用的运镜/转场/字幕/调色/颗粒/BGM 词表。
 
 只输出 JSON，不输出任何其他文字：
 {"mode": "reuse|from_scratch",
  "reason": "一句话判定理由（≤60字）",
- "reusable": ["可复用项，如 'ocean 场景'、'通用运镜词表'；无关则为空数组"]}
+ "reusable": ["可复用项；无关则为空数组"]}
 
-判定标准：选题的画面主体是否命中上述场景意象（偶然提及不算命中）。
-- 相关且复用能明显加分 → mode="reuse"，列出可复用项
-- 无关或勉强沾边 → mode="from_scratch"，reusable 只留通用词表类
-拿不准时选 from_scratch（宁可从零创作，不许给无关内容塞行星动效）。"""
+判定标准：当前引擎没有任何内置领域场景可复用，因此 mode 一律 "from_scratch"；
+reusable 只填通用词表类（如 "通用运镜词表"、"sfx 音效曲库"）。
+例外：仅当输入明确给出了本片已编写的 gen 场景清单且选题与其强相关时，才可填 "reuse" 并列出对应 gen 场景。
+拿不准时选 from_scratch（宁可中性渲染 + 现场编写，不许给无关内容塞领域动效）。"""
 
 
 def judge_template_relevance(script: ScriptDraft, model_id: str | None) -> dict:

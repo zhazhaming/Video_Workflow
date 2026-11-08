@@ -404,6 +404,7 @@ class RenderProps(_CamelModel):
     sfx: Optional[bool] = None  # 转场/高潮音效开关（缺省 true）
     narration_audio: Optional[NarrationAudioSpec] = None  # 整段口播旁白（自带配音模式）
     safe_scale: Optional[float] = Field(default=None, ge=0.6, le=1.0)  # 安全画幅缩放（抖音全屏 cover 裁左右 ~13%；1=旧行为）
+    scene_starts: Optional[list[float]] = None  # 各镜全局起点（秒，已吸附拍上；qa/卡点对齐用，元数据）
     market: Optional[MarketData] = None  # 行情图全局数据（MotionShow market 版式）
 
     def to_props_json(self) -> str:
@@ -458,7 +459,7 @@ class ProjectSettings(BaseModel):
     # 成片模板：datavideo=现有 DataVideo；motionshow=设计令牌驱动的 MotionShow
     template: str = "datavideo"
     ai_director: bool = True  # AI 导演：渲染时由 AI 决定运镜/转场/调色/颗粒/BGM（失败自动回退固定规则）
-    gen_scenes: bool = False  # 六步流程第4步：分镜后由本地 coding agent 现场编写 3~5 个定制场景（慢，失败回退内置词库）
+    gen_scenes: bool = True  # 六步流程第4步：分镜后由本地 coding agent 现场编写 3~5 个定制场景（慢，失败回退内置词库）；2026-11 起默认开（去 AI 味的关键）
 
 
 class TaskStatus(BaseModel):

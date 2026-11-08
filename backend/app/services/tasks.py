@@ -3,11 +3,16 @@
 
 Phase 1 用进程内字典足够；若以后多进程部署，换成 Redis/DB 即可，接口不变。
 """
+import importlib.util
+import json
+import subprocess
+import sys
 import threading
 import traceback
 import uuid
 
 from ..config import (
+    BACKEND_DIR,
     BGM_PUBLIC_SUBDIR,
     PROJECTS_DIR,
     REMOTION_PUBLIC,
@@ -23,6 +28,74 @@ from .pipeline import assemble_props, bind_project
 _active_by_project: dict[str, str] = {}
 _tasks: dict[str, dict] = {}
 _lock = threading.Lock()
+
+
+def _load_facts_audit():
+    """延迟加载 backend/tools/facts_audit.py（stdlib-only，importlib 按路径载入）。"""
+    path = BACKEND_DIR / "tools" / "facts_audit.py"
+    if not path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("facts_audit_tool", path)
+    if spec is None or spec.loader is None:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _facts_gate(project_id: str) -> tuple[bool, str]:
+    """事实审计硬闸门：有 research.json 时重算 script 里的数字断言。
+
+    返回 (ok, 失败原因)。无 research.json 时跳过（返回 True），不拦手动建的项目。
+    结果快照落 storage/projects/<pid>/facts_audit.json 供前端/用户查看。
+    """
+    pdir = PROJECTS_DIR / project_id
+    research = pdir / "research.json"
+    if not research.exists():
+        return True, ""
+    mod = _load_facts_audit()
+    if mod is None:
+        return True, ""  # 工具缺失不拦渲染
+    try:
+        result = mod.audit(pdir / "script.json", research)
+    except Exception as e:  # noqa: BLE001 — 审计异常视为不通过（数字来源不明）
+        return False, f"事实审计执行失败：{e}"
+    try:
+        (pdir / "facts_audit.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8"
+        )
+    except OSError:
+        pass  # 落库失败不拦闸门
+    bad = int(result.get("summary", {}).get("unverifiable") or 0)
+    if bad:
+        items = [it for it in result.get("items", []) if it.get("status") == "unverifiable"]
+        head = "；".join(f"「{it.get('value')}」@{it.get('line_id')}" for it in items[:8])
+        return False, f"{bad} 个数字查无来源（{head}）"
+    return True, ""
+
+
+def _acceptance_frames(task_id: str, project_id: str, out_path, props_path) -> str:
+    """渲后视觉验收帧（建议级，不拦截交付）：确定性抽 ≤6 帧 + 抖音裁切模拟版。"""
+    try:
+        proc = subprocess.run(
+            [
+                sys.executable, "-X", "utf8",
+                str(BACKEND_DIR / "tools" / "acceptance_frames.py"),
+                "--video", str(out_path),
+                "--props", str(props_path),
+                "--out", str(RENDERS_DIR / project_id / "acceptance"),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(BACKEND_DIR),
+        )
+        if proc.returncode == 0:
+            print(f"[acceptance] {project_id} 验收帧已生成", flush=True)
+            return "；视觉验收帧已生成（renders/<pid>/acceptance/，含抖音裁切模拟版），建议抽空过目"
+        return f"；视觉验收帧生成失败（不拦截交付）：{(proc.stderr or proc.stdout or '')[-160:]}"
+    except Exception as e:  # noqa: BLE001 — 验收帧失败不影响出片
+        return f"；视觉验收帧生成失败（不拦截交付）：{e}"
 
 
 class TaskManager:
@@ -113,6 +186,22 @@ class TaskManager:
         ensure_dirs()
         try:
             settings = load_settings(project_id)
+
+            # 0. 事实审计硬闸门（有 research.json 才跑；查无出处的数字不上屏）
+            if (PROJECTS_DIR / project_id / "research.json").exists():
+                self._update(task_id, stage="facts", message="事实审计中...")
+                ok, reason = _facts_gate(project_id)
+                if not ok:
+                    self._update(
+                        task_id,
+                        stage="error",
+                        error=f"事实审计未通过：{reason}",
+                        message="事实审计未通过：请修正 script.json 里的数字，或把权威来源补进 research.json 后重新渲染",
+                        log_tail=(PROJECTS_DIR / project_id / "facts_audit.json").read_text(encoding="utf-8")[-2000:]
+                        if (PROJECTS_DIR / project_id / "facts_audit.json").exists() else None,
+                        finished_at=now_iso(),
+                    )
+                    return
 
             # 1. 配音（按项目设置选择音色/语速）
             self._update(
@@ -320,10 +409,13 @@ class TaskManager:
                 )
                 return
 
+            # 5. 视觉验收帧（建议级）：确定性抽帧 + 抖音裁切模拟，不拦截交付
+            acceptance_msg = _acceptance_frames(task_id, project_id, out_path, props_path)
+
             self._update(
                 task_id,
                 stage="done",
-                message="完成",
+                message="完成" + acceptance_msg,
                 video_url=f"/api/projects/{project_id}/video",
                 log_tail=log_tail,
                 finished_at=now_iso(),

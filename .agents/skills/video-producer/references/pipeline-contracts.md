@@ -107,7 +107,8 @@ remotion-engine/
   },
   "sfx": true,
   "narrationAudio": { "src": "voice/projects/<pid>/track.wav", "volume": 1.0 },
-  "safeScale": 0.8
+  "safeScale": 0.8,
+  "sceneStarts": [2.18, 9.82]
 }
 ```
 
@@ -169,6 +170,7 @@ remotion-engine/
 }
 ```
 
+props 可含 `sceneStarts`（各镜全局起点秒，已吸附拍上；build 工具写入，qa_report/卡点对齐消费）。
 组装 props 时把 `plan.shots[i].plan` 映射进 `RenderShot`（`intensity→camIntensity`、`transition→enterTransition`、`grain→顶层 grainOpacity 平均值`），并过滤 `emphasis` 为该句台词子串。
 **`plan.safeScale` 默认 0.8**（抖音竖屏安全画幅，见 §4 与 `platform-presets.md`）；`camIntensity` 同步 ≤1.1。
 
