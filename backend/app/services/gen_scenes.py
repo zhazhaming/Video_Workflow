@@ -28,16 +28,42 @@ AGENT_CANDIDATES = ("zcode", "claude", "command-code", "commandcode")
 _PERMISSION_MODES = {"claude": "acceptEdits", "command-code": "acceptEdits", "commandcode": "acceptEdits"}
 
 
+def _resolve_dsh() -> str | None:
+    """定位 DeepSeek Harness 的 dsh.cmd（桌面版安装后 CLI 不一定在 PATH 里）。"""
+    found = shutil.which("dsh")
+    if found:
+        return found
+    bases = [
+        Path(os.getenv("LOCALAPPDATA", "")) / "Programs" / "dsh-desktop",
+        Path(os.getenv("ProgramFiles", "")) / "dsh-desktop",
+        Path("D:/software/dsh-desktop"),
+        Path("C:/software/dsh-desktop"),
+    ]
+    for base in bases:
+        cand = base / "resources" / "runtime" / "cli" / "bin" / "dsh.cmd"
+        if cand.exists():
+            return str(cand)
+    return None
+
+
 def _detect_agent() -> tuple[str, str]:
-    """返回 (可执行名, 权限模式)；GEN_AGENT_CMD 优先，否则自动探测。"""
+    """返回 (可执行名或完整路径, 模式标记)；GEN_AGENT_CMD 优先，否则自动探测。"""
     forced = os.getenv("GEN_AGENT_CMD", "").strip()
     if forced:
+        if forced.lower() == "dsh":
+            resolved = _resolve_dsh()
+            if not resolved:
+                raise RuntimeError(
+                    "GEN_AGENT_CMD=dsh 但未找到 dsh.cmd（找过 PATH 与常见安装位置），"
+                    "确认 DeepSeek Harness 已安装，或在 .env 直接写 dsh.cmd 完整路径"
+                )
+            return resolved, "headless"
         return forced, _PERMISSION_MODES.get(forced.lower(), "yolo")
     for name in AGENT_CANDIDATES:
         if shutil.which(name):
             return name, _PERMISSION_MODES.get(name, "yolo")
     raise RuntimeError(
-        "未找到可用的本地 agent CLI（zcode/claude/command-code），"
+        "未找到可用的本地 agent CLI（zcode/claude/command-code/dsh），"
         "可在 backend/.env 配置 GEN_AGENT_CMD"
     )
 
@@ -179,7 +205,16 @@ def build_agent_prompt(
 
 def _run_agent(prompt: str, update) -> None:
     exe, mode = _detect_agent()
-    cmd = f'{exe} -p --permission-mode {mode}'
+    env = None
+    if mode == "headless":
+        # DeepSeek Harness：dsh headless，任务从 stdin 读，写文件默认放行。
+        # 路径不能加引号：subprocess shell=True 走 cmd /c 时首尾引号会被剥离。
+        cmd = f"{exe} headless"
+        # dsh 会读 DEEPSEEK_BASE_URL 改写自己的 API 路由（指向官方域名时 Messages 请求 404），
+        # 子进程环境里剔除它，只保留 DEEPSEEK_API_KEY。
+        env = {k: v for k, v in os.environ.items() if k != "DEEPSEEK_BASE_URL"}
+    else:
+        cmd = f'{exe} -p --permission-mode {mode}'
     update(stage="gen", message=f"本地 agent（{exe}）现场编写中，最长 {AGENT_TIMEOUT // 60} 分钟…")
     proc = subprocess.Popen(
         cmd,
@@ -191,6 +226,7 @@ def _run_agent(prompt: str, update) -> None:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=env,
     )
     timed_out = False
     try:

@@ -30,9 +30,11 @@ def render_video(
     log_path.parent.mkdir(parents=True, exist_ok=True)
     comp = _safe_composition(composition)
     frames_part = f" --frames={frames[0]}-{frames[1]}" if frames else ""
+    # GPU 优先：h264 编码走 NVENC（无 N 卡自动回退软件编码），Chrome 合成走 ANGLE
     cmd = (
         f'npx remotion render {comp} "{out_path}" '
-        f'--props="{props_path}"{frames_part} --codec=h264 --log=info --overwrite'
+        f'--props="{props_path}"{frames_part} --codec=h264 --hardware-acceleration=if-possible '
+        f'--gl=angle --log=info --overwrite'
     )
     with open(log_path, "w", encoding="utf-8") as log:
         log.write(f"$ {cmd}\n(cwd={REMOTION_DIR})\n\n")
