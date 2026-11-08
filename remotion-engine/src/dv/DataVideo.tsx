@@ -68,7 +68,8 @@ const SceneBackdrop: React.FC<{
   marks: { start: number; dur: number }[];
 }> = ({ shot, progress, accent, paper, marks }) => {
   const scene = shot.scene;
-  if (scene?.kind && scene.kind.startsWith("gen:")) {
+  // gen 场景必须已在 registry 注册；未注册的 kind（AI 幻觉/历史遗留）回退图片/渐变
+  if (scene?.kind && scene.kind.startsWith("gen:") && GEN_SCENES[scene.kind]) {
     return <GenSceneView kind={scene.kind} shot={shot} progress={progress} accent={accent} marks={marks} />;
   }
   const [c1, c2] = shot.colors;

@@ -541,8 +541,9 @@ shots 数量必须严格等于输入镜头数量，顺序一一对应。
    若输入给出了【可用 gen 场景清单】，按台词意象就近选用（相邻镜头不要用相同 kind），可带参数：
    {"kind":"gen:<pid>:<NN>","palette":["#1a1030","#3a1c10"],"accent":"#ff9a3d","speed":1.2}
    （palette 两色贴台词情绪；speed 0.5~2）
-   没有清单或没有贴切的场景就写 null——引擎只认 gen: 前缀，其他 kind 一律忽略并回退渐变图，
-   编造不存在的场景 kind 等于白编。scene 镜头 grade.tintOpacity 建议 0.1~0.2 保持画面通透
+   没有清单或没有贴切的场景就写 null——注意：只在输入给出的【可用 gen 场景清单】里选，
+   清单里的场景 kind 属于特定项目 id，禁止自己编造项目 id 或场景名（引擎查不到注册会回退渐变，
+   编了等于白编）。scene 镜头 grade.tintOpacity 建议 0.1~0.2 保持画面通透
 2. camera（本镜主运镜，作用于图片/占位/场景镜头）：
    push=缓推（走近/强调），pull=缓拉（抽离/释然），pan_left/pan_right=横摇（并列/环境），
    tilt_up/tilt_down=上下摇（压迫/仰望），diag_in/diag_out=斜推斜拉（动感/失控），

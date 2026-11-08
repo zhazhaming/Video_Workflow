@@ -1051,6 +1051,14 @@ def _estimate_total_frames(props: RenderProps) -> int:
 def run_render(pid: str, mode: str, update) -> None:
     if mode not in ("preview", "full"):
         raise RuntimeError(f"未知渲染模式：{mode}")
+    # 事实审计硬闸门（有 research.json 才跑；查无出处的数字不上屏）
+    from .tasks import _facts_gate
+
+    gate_ok, gate_reason = _facts_gate(pid)
+    if not gate_ok:
+        raise RuntimeError(
+            f"事实审计未通过：{gate_reason}（修正 script.json 数字或补 research.json 后重试）"
+        )
     script = _load_script(pid)
     settings = _load_settings(pid)
     flow = load_flow(pid)
@@ -1128,9 +1136,18 @@ def run_render(pid: str, mode: str, update) -> None:
     log_tail = renderer.tail_log(log_path)
     if rc != 0 or not out_path.exists():
         raise RuntimeError(f"渲染失败（退出码 {rc}）\n{log_tail[-800:]}")
+    done_msg = "预览完成，请过目" if mode == "preview" else "整片完成"
+    if mode == "full":
+        # 视觉验收帧（建议级，不拦截交付）
+        try:
+            from .tasks import _acceptance_frames
+
+            done_msg += _acceptance_frames(None, pid, out_path, props_path)
+        except Exception as e:  # noqa: BLE001 — 验收帧失败不影响出片
+            done_msg += f"；视觉验收帧生成失败：{e}"[:100]
     update(
         stage="rendering",
-        message="预览完成，请过目" if mode == "preview" else "整片完成",
+        message=done_msg,
         video_url=f"/api/projects/{pid}/flow/video-preview" if mode == "preview" else f"/api/projects/{pid}/video",
         log_tail=log_tail,
     )

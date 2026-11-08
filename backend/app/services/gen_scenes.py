@@ -254,7 +254,8 @@ def write_registry(pid: str, slugs: list[str]) -> None:
     for p, sl in merged.items():
         for slug in sl:
             nn = slug.split(":")[-1]
-            comp = f"Scene_{p}_{nn}"
+            # TS 标识符不允许连字符：pid 里的非字母数字统一转下划线
+            comp = "Scene_" + re.sub(r"[^A-Za-z0-9_]", "_", p) + f"_{nn}"
             imports.append(f'import {comp} from "./{p}/Scene{nn}";')
             body.append(f'  "{slug}": {comp},')
     content = (
