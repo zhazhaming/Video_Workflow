@@ -44,6 +44,13 @@ class ConfirmRequest(BaseModel):
     schedule: bool = True
 
 
+class RetryRequest(BaseModel):
+    """重试失败条目：indices 为视频序号（video.index），空 = 全部失败条目。"""
+
+    indices: list[int] = Field(default_factory=list, max_length=5)
+    schedule: bool = True
+
+
 @router.get("/status")
 def status():
     return daily.service.status()
@@ -83,6 +90,17 @@ def produce_run(run_id: str):
     """已排产批次立即开始制作（不必等凌晨）。"""
     try:
         return daily.service.produce_now(run_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except (RuntimeError, ValueError) as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@router.post("/runs/{run_id}/retry")
+def retry_run(run_id: str, req: RetryRequest | None = None):
+    """重试批次中失败的条目（默认全部失败条目；流水线空闲时可用，冲突则 409）。"""
+    try:
+        return daily.service.retry_failed(run_id, (req or RetryRequest()).indices or None)
     except LookupError as e:
         raise HTTPException(404, str(e)) from e
     except (RuntimeError, ValueError) as e:
