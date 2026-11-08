@@ -1,19 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  accessLogin,
+  clearToken,
   createProject,
   deleteProject,
   generateScript,
   getProject,
   getProjectSettings,
+  getToken,
   listModels,
   listProjects,
   listPromptTemplates,
+  pipelineStatus,
   saveProjectSettings,
   saveScript,
+  setToken,
 } from "./api";
 import { FlowPanel } from "./components/FlowPanel";
+import { AccessGate } from "./components/AccessGate";
+import { DailyPipeline } from "./components/DailyPipeline";
 import { HotMusic } from "./components/HotMusic";
 import { HotspotRadar } from "./components/HotspotRadar";
+import { ModelSettings } from "./components/ModelSettings";
+import { PublishCenter } from "./components/PublishCenter";
 import { PublishPanel } from "./components/PublishPanel";
 import type {
   ModelInfo,
@@ -23,7 +32,16 @@ import type {
 } from "./types";
 
 type View = { kind: "list" } | { kind: "detail"; pid: string };
-type ListTab = "projects" | "radar" | "music";
+type ListTab = "projects" | "radar" | "music" | "pipeline" | "publish";
+
+const LIST_TABS: ListTab[] = ["projects", "radar", "music", "pipeline", "publish"];
+/** 深链初始化：飞书卡片链接带 ?tab=pipeline 时直达流水线勾选页；?tab=publish&pid=x 直达发布中心 */
+const tabFromURL = (): ListTab => {
+  const t = new URLSearchParams(window.location.search).get("tab");
+  return LIST_TABS.includes(t as ListTab) ? (t as ListTab) : "projects";
+};
+const pidFromURL = (): string =>
+  new URLSearchParams(window.location.search).get("pid") ?? "";
 
 // ---- 本地编辑草稿（刷新/误关保护）：按项目存 localStorage ----
 
@@ -82,14 +100,50 @@ const clampSeconds = (n: number) =>
   Math.min(SECONDS_MAX, Math.max(SECONDS_MIN, Math.round(n)));
 
 export const App = () => {
+  // ---- 访问口令：深链 ?token= 自动登录；401 时弹锁屏 ----
+  const [authed, setAuthed] = useState<boolean | null>(null); // null=校验中
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const qt = q.get("token");
+    if (qt) {
+      setToken(qt);
+      q.delete("token");
+      const u = new URL(window.location.href);
+      u.search = q.toString() ? `?${q.toString()}` : "";
+      window.history.replaceState({}, "", u.toString()); // 从地址栏去掉口令
+    }
+    const t = getToken();
+    if (!t) {
+      setAuthed(false);
+      return;
+    }
+    accessLogin(t)
+      .then(() => setAuthed(true))
+      .catch(() => {
+        clearToken();
+        setAuthed(false);
+      });
+  }, []);
+  useEffect(() => {
+    const h = () => setAuthed(false); // 任意请求 401 → 回锁屏
+    window.addEventListener("vw-unauthorized", h);
+    return () => window.removeEventListener("vw-unauthorized", h);
+  }, []);
+
   const [view, setView] = useState<View>({ kind: "list" });
-  const [listTab, setListTab] = useState<ListTab>("projects");
+  const [listTab, setListTab] = useState<ListTab>(tabFromURL);
+  // 发布中心深链：?tab=publish&pid=x 预选项目；详情页「预约发布」也走这里
+  const [publishPid, setPublishPid] = useState<string>(pidFromURL);
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [projQuery, setProjQuery] = useState("");
   const [projSort, setProjSort] = useState<"updated" | "created" | "title">("updated");
   const [radarAlerts, setRadarAlerts] = useState(0);
+  // 视频流水线运行中 → 顶栏 tab 红点（轻量轮询）
+  const [pipelineBusy, setPipelineBusy] = useState(false);
   const [listErr, setListErr] = useState("");
   const [creating, setCreating] = useState(false);
+  // 模型 API 设置弹窗
+  const [showModelCfg, setShowModelCfg] = useState(false);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelId, setModelId] = useState("");
   const [prompt, setPrompt] = useState(() => localStorage.getItem("vw.prompt") ?? "");
@@ -201,15 +255,24 @@ export const App = () => {
     }
   }, []);
 
+  /** 拉取模型可用性（挂载时 + 模型配置保存后），当前选中仍有效则保持不变 */
+  const refreshModels = useCallback(async () => {
+    try {
+      const r = await listModels();
+      setModels(r.models);
+      setModelId((cur) =>
+        cur && r.models.some((m) => m.id === cur)
+          ? cur
+          : (r.models.find((m) => m.is_default) ?? r.models.find((m) => m.available))?.id ?? ""
+      );
+    } catch {
+      setModels([]);
+    }
+  }, []);
+
   useEffect(() => {
     refreshList();
-    listModels()
-      .then((r) => {
-        setModels(r.models);
-        const def = r.models.find((m) => m.is_default) ?? r.models.find((m) => m.available);
-        if (def) setModelId(def.id);
-      })
-      .catch(() => setModels([]));
+    refreshModels();
     listPromptTemplates()
       .then((r) => {
         const saved = localStorage.getItem("vw.prompt");
@@ -221,7 +284,25 @@ export const App = () => {
         }
       })
       .catch(() => {});
-  }, [refreshList]);
+  }, [refreshList, refreshModels]);
+
+  // 视频流水线运行状态轮询（顶栏 tab 红点）
+  useEffect(() => {
+    let alive = true;
+    const poll = () => {
+      pipelineStatus()
+        .then((s) => {
+          if (alive) setPipelineBusy(!!s.running);
+        })
+        .catch(() => {});
+    };
+    poll();
+    const t = window.setInterval(poll, 20000);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+    };
+  }, []);
 
   const applySeconds = (value: number) => {
     setSeconds(clampSeconds(value));
@@ -238,7 +319,8 @@ export const App = () => {
       applySeconds(st.target_seconds || 180);
       if (st.style) setStyle(st.style);
       if (st.prompt) setPrompt(st.prompt);
-      if (st.model_id) setModelId(st.model_id);
+      // 失效的模型 id（如 vibe 项目遗留的 "agent" 占位）不套用到选择器
+      if (st.model_id && (!models.length || models.some((m) => m.id === st.model_id))) setModelId(st.model_id);
       if (st.voice) setVoice(st.voice);
       setTtsRate(st.tts_rate || "+6%");
       setBgmName(st.bgm ?? "auto");
@@ -397,6 +479,10 @@ export const App = () => {
     return list;
   }, [projects, projQuery, projSort]);
 
+  // ---- 访问锁屏（远程部署时防止信息泄露）----
+  if (authed === null) return <div className="page"><div className="muted">校验访问口令…</div></div>;
+  if (!authed) return <AccessGate onOk={() => setAuthed(true)} />;
+
   // ---- 列表页 ----
   if (view.kind === "list") {
     return (
@@ -422,14 +508,33 @@ export const App = () => {
             >
               🎵 热门歌曲
             </button>
+            <button
+              className={`tab ${listTab === "pipeline" ? "tab-active" : ""}`}
+              onClick={() => setListTab("pipeline")}
+            >
+              🎬 视频流水线
+              {pipelineBusy && <span className="tab-dot" title="流水线运行中" />}
+            </button>
+            <button
+              className={`tab ${listTab === "publish" ? "tab-active" : ""}`}
+              onClick={() => setListTab("publish")}
+            >
+              🚀 发布
+            </button>
           </div>
+          <button className="btn" title="配置模型 API（base_url / 密钥 / 模型名）" onClick={() => setShowModelCfg(true)}>
+            ⚙ 模型 API
+          </button>
           <button className="btn primary" disabled={creating} onClick={newProject}>
             {creating ? "创建中..." : "+ 新建视频项目"}
           </button>
         </header>
         {models.length > 0 && !anyModelAvailable && (
           <div className="warn">
-            模型均未配置：在 backend/.env 填写任一模型的密钥与接口地址后可使用 AI 生成/优化脚本（当前仅支持手动编辑）。
+            模型均未配置：点「⚙ 模型 API」填入任一模型的密钥与接口地址后，可使用 AI 生成/优化脚本（当前仅支持手动编辑）。
+            <button className="btn small" style={{ marginLeft: 8 }} onClick={() => setShowModelCfg(true)}>
+              去配置
+            </button>
           </div>
         )}
         {listTab === "projects" ? (
@@ -507,8 +612,18 @@ export const App = () => {
             onAlertCount={setRadarAlerts}
             onGenerateScript={generateScriptFromTopic}
           />
+        ) : listTab === "pipeline" ? (
+          <DailyPipeline onOpenProject={(pid) => openDetail(pid)} />
+        ) : listTab === "publish" ? (
+          <PublishCenter
+            initialPid={publishPid || undefined}
+            onConsumeInitialPid={() => setPublishPid("")}
+          />
         ) : (
           <HotMusic />
+        )}
+        {showModelCfg && (
+          <ModelSettings onClose={() => setShowModelCfg(false)} onSaved={() => refreshModels()} />
         )}
       </div>
     );
@@ -572,7 +687,15 @@ export const App = () => {
         </div>
 
         <div className="col-side">
-          <PublishPanel pid={pid} modelId={modelId} />
+          <PublishPanel
+            pid={pid}
+            modelId={modelId}
+            onSchedulePublish={(schedulePid) => {
+              setPublishPid(schedulePid);
+              setView({ kind: "list" });
+              setListTab("publish");
+            }}
+          />
         </div>
       </div>
     </div>

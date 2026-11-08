@@ -5,6 +5,7 @@ import {
   approveFlowPreview,
   approveFlowResearch,
   approveFlowStyles,
+  comfyStatus,
   confirmFlowReview,
   deleteFlowAudio,
   flowAudioUrl,
@@ -27,6 +28,7 @@ import {
   selectFlowImage,
   selectFlowStyle,
   setFlowAudioMode,
+  startFlowAiImages,
   startFlowCopy,
   startFlowFull,
   startFlowImages,
@@ -40,6 +42,7 @@ import {
 import { ScriptEditor } from "./ScriptEditor";
 import {
   STAGE_LABEL,
+  type ComfyStatus,
   type FlowState,
   type ProjectSettings,
   type ResearchArticle,
@@ -132,6 +135,8 @@ export const FlowPanel: React.FC<Props> = ({ pid, modelId, onTaskChange }) => {
   const [audioBusy, setAudioBusy] = useState(false);
   const [brokenThumbs, setBrokenThumbs] = useState<Record<string, boolean>>({});
   const [showShots, setShowShots] = useState(false);
+  // ComfyUI AI 生图服务状态
+  const [comfy, setComfy] = useState<ComfyStatus | null>(null);
 
   const timer = useRef<number | null>(null);
   const focusDone = useRef(false);
@@ -214,6 +219,14 @@ export const FlowPanel: React.FC<Props> = ({ pid, modelId, onTaskChange }) => {
     }
   }, [pid]);
 
+  const loadComfy = useCallback(async () => {
+    try {
+      setComfy(await comfyStatus());
+    } catch {
+      setComfy({ reachable: false, reason: "状态获取失败（后端未启动？）" });
+    }
+  }, []);
+
   const loadAll = useCallback(async () => {
     await Promise.all([
       loadState(),
@@ -224,8 +237,9 @@ export const FlowPanel: React.FC<Props> = ({ pid, modelId, onTaskChange }) => {
       loadStyles(),
       loadStoryboard(),
       loadReview(),
+      loadComfy(),
     ]);
-  }, [loadState, loadResearch, loadScript, loadSettings, loadImages, loadStyles, loadStoryboard, loadReview]);
+  }, [loadState, loadResearch, loadScript, loadSettings, loadImages, loadStyles, loadStoryboard, loadReview, loadComfy]);
 
   // ---- 任务轮询（同 RenderPanel：1500ms，挂载时恢复进行中的任务） ----
 
@@ -909,7 +923,23 @@ export const FlowPanel: React.FC<Props> = ({ pid, modelId, onTaskChange }) => {
         >
           {images.length > 0 ? "重新找图" : "AI 找图"}
         </button>
-        <span className="hint">按幕搜索可商用图片；也可上传本地图，或不配图走代码动画。</span>
+        <button
+          className="btn"
+          disabled={busy || !comfy?.reachable}
+          title={
+            comfy?.reachable
+              ? `ComfyUI 生图（${comfy.checkpoint || "默认模型"}），中文提示词自动翻译成英文`
+              : comfy?.reason || "ComfyUI 不可用"
+          }
+          onClick={() => startTask(() => startFlowAiImages(pid, modelId))}
+        >
+          🎨 AI 生图{comfy?.reachable ? "（全部幕）" : "（不可用）"}
+        </button>
+        <span className="hint">
+          按幕搜索可商用图片，或局域网 ComfyUI 生成；也可上传本地图，或不配图走代码动画。
+          {comfy?.reachable && comfy.gpu ? ` · ${comfy.gpu.split("=").pop()}` : ""}
+          {comfy?.reachable && !comfy.checkpoints?.length ? " · 未检测到 checkpoint" : ""}
+        </span>
       </div>
 
       {images.map((sc) => (
@@ -919,11 +949,20 @@ export const FlowPanel: React.FC<Props> = ({ pid, modelId, onTaskChange }) => {
             {sc.custom_file ? (
               <span className="good">本地图：{sc.custom_file}</span>
             ) : sc.selected ? (
-              <span className="good">已选网络图</span>
+              <span className="good">已选图</span>
             ) : (
               <span className="muted">未配图（代码动画）</span>
             )}
-            <label className="btn small" style={{ marginLeft: "auto", cursor: "pointer" }}>
+            <button
+              className="btn small"
+              style={{ marginLeft: "auto" }}
+              disabled={busy || !comfy?.reachable}
+              title={comfy?.reachable ? `只用 ComfyUI 重新生成第 ${sc.index} 幕候选` : comfy?.reason || "ComfyUI 不可用"}
+              onClick={() => startTask(() => startFlowAiImages(pid, modelId, [sc.index]))}
+            >
+              🎨 AI 生图
+            </button>
+            <label className="btn small" style={{ cursor: "pointer" }}>
               上传本地图
               <input
                 type="file"
@@ -941,6 +980,12 @@ export const FlowPanel: React.FC<Props> = ({ pid, modelId, onTaskChange }) => {
             EN: {sc.query_en || "—"}
             <br />
             中文：{sc.query_zh || "—"}
+            {sc.prompt_cn ? (
+              <>
+                <br />
+                生图提示词：{sc.prompt_cn}
+              </>
+            ) : null}
             {sc.note ? (
               <>
                 <br />
@@ -949,6 +994,7 @@ export const FlowPanel: React.FC<Props> = ({ pid, modelId, onTaskChange }) => {
             ) : null}
           </div>
           {sc.error && <div className="error">{sc.error}</div>}
+          {sc.ai_error && <div className="error">{sc.ai_error}</div>}
           {sc.candidates.length > 0 ? (
             <div className="cand-grid">
               {sc.candidates.map((c) => (

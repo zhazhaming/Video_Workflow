@@ -16,7 +16,7 @@ description: 竖屏短视频制作总入口与流程规范（内容选题→视�
 | 3 | BGM | `video-bgm` | `public/bgm/<name>.mp3` + bpm/beats | `tools/gen_event_bgm.py`、`tools/beat_analyze.py` |
 | 4 | 配音 | `video-voiceover` | `public/voice/projects/<pid>/s01_0.wav...` | `backend/tools/tts_gen.py` |
 | 5 | 视频风格 | `video-style` | `backend/storage/projects/<pid>/plan.json` | — |
-| 6 | 视频内容 | `video-production` | `backend/storage/renders/<pid>/final.mp4` | `tools/tts_gen.py`、`tools/premix_track.py`、`tools/render_video.py` |
+| 6 | 视频内容 | `video-production` | `backend/storage/renders/<pid>/final.mp4`（+ `facts_audit.json` 事实审计 / `acceptance.json` 视觉自查） | `tools/tts_gen.py`、`tools/premix_track.py`、`tools/render_video.py`、`tools/facts_audit.py`、`tools/acceptance_frames.py` |
 
 **阶段顺序即数据依赖**：文案定字数与幕数 → 配音定每句实测时长 → BGM 节拍与配音时长是风格/分镜的输入（切镜卡拍、幕长规划）→ 制作阶段组装全部产物。用户跳阶段（如只要文案）没问题，但要做完整视频时按此顺序推进，每阶段产物落盘后再进下一阶段。注意：需要事件级卡点时，BGM 生成分两步——先填节拍网格组 props 算出分镜时间轴，再按事件时刻生成（`video-bgm` 有完整流程）。
 
@@ -31,6 +31,10 @@ description: 竖屏短视频制作总入口与流程规范（内容选题→视�
    - 成片：`backend/storage/renders/<pid>/`（`props.json`、`preview.mp4`、`final.mp4`、`cover.jpg`）
    详细 schema 见 `references/pipeline-contracts.md`——**写任何产物 JSON 前必读**。
 3. **Windows 环境**：Python 用 `python`（在 `backend/` 下跑工具，依赖已装）；仓库内 Node 命令在 `remotion-engine/` 下跑 `npx`。
+4. **默认出片预设（抖音竖屏安全画幅，必须默认带上）**：`plan.json` 写 `safeScale: 0.8`，`build_config.json` 写
+   `safe_scale: 0.8`；内容落在 x 185~895 / y 300~1460；运镜幅度 ≤1.1；验收按 802×1920 模拟平台裁切抽帧。
+   原因：抖音 20:9 机型/预览页 cover 铺满会裁掉左右各 ≈13%。完整预设见
+   `references/platform-presets.md`（换平台公式、UI 避让区、9:20 备选都在这）。
 
 ## ★ 模板相关性规则（每次制作前必须执行，继承自 AGENTS.md）
 
@@ -50,5 +54,6 @@ description: 竖屏短视频制作总入口与流程规范（内容选题→视�
 ## 本 skill 的参考文档
 
 - `references/pipeline-contracts.md` —— pid 目录契约、script.json / props.json / plan.json 完整 schema、line id 约定、时长与停顿公式。**所有阶段共用，写产物前必读。**
+- `references/platform-presets.md` —— **平台发布预设（默认）**：抖音 9:16 安全画幅 `safeScale 0.8`、内容安全区、运镜上限、UI 避让、裁切验收命令、换平台公式、9:20 备选。做竖屏视频默认按它执行。
 - `references/legacy-backend.md` —— 双轨说明：FastAPI 旧六步端点一览、何时还需要启动后端、skill 流程与旧流程的产物如何互通。
 - `references/topic-selection.md` —— 选题方法论（已由 `video-topic` skill 承接，此文件保留作背景知识）。

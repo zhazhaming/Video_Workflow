@@ -115,4 +115,7 @@ export type RenderProps = {
   kicker?: string | null;
   sfx?: boolean | null;
   narrationAudio?: NarrationAudioSpec | null;
+  /** 安全画幅缩放（0.6~1，缺省 1）：抖音等平台全屏播放会按 cover 裁掉左右约 13%，
+   *  把整镜内容缩到中央安全区后，被裁掉的正好是纸色边框；1 = 不缩放（旧行为）。 */
+  safeScale?: number | null;
 }

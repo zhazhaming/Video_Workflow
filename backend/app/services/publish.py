@@ -138,26 +138,9 @@ def load_all_copies(project_id: str) -> dict:
 
 # ---------- 封面抽取 ----------
 
-def extract_cover(project_id: str, at_ratio: float = 0.08) -> Path | None:
-    """从成片抽取封面帧（默认取 8% 处，避开片头标题卡）。无成片返回 None。"""
-    video = RENDERS_DIR / project_id / "final.mp4"
-    if not video.exists() or not FFMPEG_BIN.exists():
-        return None
-    out = RENDERS_DIR / project_id / "cover.jpg"
-    if out.exists():
-        return out
-    dur = _video_duration(video)
-    at = max(1.0, dur * at_ratio)
-    cmd = [
-        str(FFMPEG_BIN), "-y", "-v", "error", "-ss", f"{at:.2f}",
-        "-i", str(video), "-frames:v", "1", "-q:v", "3", str(out),
-    ]
-    try:
-        subprocess.run(cmd, timeout=120, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:  # noqa: BLE001 — 封面失败不阻断
-        return None
-    return out if out.exists() else None
+# 双封面目标规格：竖版 3:4（创作者中心竖版封面）、横版 16:9（创作者中心横版封面）
+COVER_V_SIZE = (1080, 1440)
+COVER_H_SIZE = (1280, 720)
 
 
 def _video_duration(video: Path) -> float:
@@ -170,8 +153,81 @@ def _video_duration(video: Path) -> float:
             capture_output=True, text=True, timeout=60, check=True,
         )
         return float(r.stdout.strip().splitlines()[0])
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — 封面失败不阻断
         return 30.0
+
+
+def _video_size(video: Path) -> tuple[int, int]:
+    """取视频宽高（失败回退 1080x1920 竖屏）。"""
+    ffprobe = FFMPEG_BIN.with_name("ffprobe.exe")
+    bin_path = ffprobe if ffprobe.exists() else FFMPEG_BIN
+    try:
+        r = subprocess.run(
+            [str(bin_path), "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height", "-of", "csv=p=0", str(video)],
+            capture_output=True, text=True, timeout=60, check=True,
+        )
+        w, h = r.stdout.strip().splitlines()[0].split(",")
+        return int(w), int(h)
+    except Exception:  # noqa: BLE001 — 封面失败不阻断
+        return 1080, 1920
+
+
+def _ffmpeg_shot(video: Path, at: float, out: Path, vf: str | None) -> bool:
+    cmd = [str(FFMPEG_BIN), "-y", "-v", "error", "-ss", f"{at:.2f}", "-i", str(video),
+           "-frames:v", "1"]
+    if vf:
+        cmd += ["-vf", vf]
+    cmd += ["-q:v", "3", str(out)]
+    try:
+        subprocess.run(cmd, timeout=120, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:  # noqa: BLE001 — 单张失败不影响其余
+        return False
+    return out.exists()
+
+
+def extract_covers(project_id: str, at_ratio: float = 0.08) -> dict[str, Path]:
+    """从成片抽取发布用封面三件套：
+    cover.jpg 全帧 9:16（旧接口兼容）、cover_v.jpg 竖版 3:4、cover_h.jpg 横版 16:9。
+    成片比封面新（重渲过）时自动重新生成；无成片/无 ffmpeg 返回 {}。
+    抽帧时刻默认 8% 处，避开片头标题卡。"""
+    video = RENDERS_DIR / project_id / "final.mp4"
+    if not video.exists() or not FFMPEG_BIN.exists():
+        return {}
+    rdir = video.parent
+    outs = {
+        "cover": rdir / "cover.jpg",
+        "vertical": rdir / "cover_v.jpg",
+        "horizontal": rdir / "cover_h.jpg",
+    }
+    video_mtime = video.stat().st_mtime
+    if all(p.exists() and p.stat().st_mtime >= video_mtime for p in outs.values()):
+        return outs
+
+    at = max(1.0, _video_duration(video) * at_ratio)
+    vw, vh = _video_size(video)
+    results: dict[str, Path] = {}
+    if _ffmpeg_shot(video, at, outs["cover"], None):
+        results["cover"] = outs["cover"]
+    # 竖版 3:4：以视频宽为基准取高（超高受限于视频高），居中裁切后归一到标准尺寸
+    h_v = min(vh, round(vw * 4 / 3))
+    w_v = min(vw, round(h_v * 3 / 4))
+    vf_v = f"crop={w_v}:{h_v}:(iw-{w_v})/2:(ih-{h_v})/2,scale={COVER_V_SIZE[0]}:{COVER_V_SIZE[1]}"
+    if _ffmpeg_shot(video, at, outs["vertical"], vf_v):
+        results["vertical"] = outs["vertical"]
+    # 横版 16:9：同样居中裁切后归一
+    h_h = min(vh, round(vw * 9 / 16))
+    w_h = min(vw, round(h_h * 16 / 9))
+    vf_h = f"crop={w_h}:{h_h}:(iw-{w_h})/2:(ih-{h_h})/2,scale={COVER_H_SIZE[0]}:{COVER_H_SIZE[1]}"
+    if _ffmpeg_shot(video, at, outs["horizontal"], vf_h):
+        results["horizontal"] = outs["horizontal"]
+    return results
+
+
+def extract_cover(project_id: str, at_ratio: float = 0.08) -> Path | None:
+    """兼容旧接口：全帧封面 cover.jpg（缺失时顺带生成竖/横双封面）。"""
+    return extract_covers(project_id, at_ratio).get("cover")
 
 
 # ---------- 抖音官方 OpenAPI ----------

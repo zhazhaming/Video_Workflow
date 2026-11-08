@@ -522,17 +522,24 @@ def test_tools_meta_merge_and_cache(svc, monkeypatch):
     })
     svc.refresh()
     added = svc.merge_tools_meta([
-        {"ref": "vercel/ai", "audience": ["程序员", "产品经理"], "use": "AI 应用开发套件", "why": "生态成熟"},
+        {"ref": "vercel/ai", "intro": "开发 AI 应用的工具套件", "audience": ["程序员", "产品经理"],
+         "use": "AI 应用开发套件", "why": "生态成熟"},
         {"ref": "ghost/not-in-trending", "audience": ["程序员"], "use": "x", "why": "y"},  # 不在榜 → 忽略
     ])
     assert added == 1
     item = svc.tools_section(5)["items"][0]
     assert item["use"] == "AI 应用开发套件"
+    assert item["summary_cn"] == "开发 AI 应用的工具套件"
     assert item["audience"] == ["程序员", "产品经理"]
     assert item["ai_done"] is True
     # 落盘持久化，重启后仍可读
     meta = svc.store.load_tools_meta()
     assert meta[hs.normalize_title("vercel/ai")]["why"] == "生态成熟"
+    assert meta[hs.normalize_title("vercel/ai")]["intro"] == "开发 AI 应用的工具套件"
+    # 兼容老缓存：缺 intro 视为未解读，下次 AI 解读会补上中文介绍
+    meta[hs.normalize_title("vercel/ai")].pop("intro")
+    svc.store.save_tools_meta(meta)
+    assert svc.tools_section(5)["items"][0]["ai_done"] is False
 
 
 def test_route_ai_briefing_cache(client, monkeypatch):
@@ -584,7 +591,8 @@ def test_route_ai_tools(client, monkeypatch):
 
     def fake_meta(tools, model_id=None):
         calls["n"] += 1
-        return [{"ref": tools[0]["name"], "audience": ["程序员"], "use": "AI 开发套件", "why": "省事"}]
+        return [{"ref": tools[0]["name"], "intro": "构建 AI 应用的开发套件",
+                 "audience": ["程序员"], "use": "AI 开发套件", "why": "省事"}]
 
     monkeypatch.setattr(llm, "generate_tool_meta", fake_meta)
     r1 = client.post("/api/hotspot/ai-tools", json={})
@@ -592,6 +600,7 @@ def test_route_ai_tools(client, monkeypatch):
     body = r1.json()
     assert body["classified"] == 1
     assert body["tools"]["items"][0]["use"] == "AI 开发套件"
+    assert body["tools"]["items"][0]["summary_cn"] == "构建 AI 应用的开发套件"
     # 同仓库第二轮直接读落盘缓存，不再调 LLM
     r2 = client.post("/api/hotspot/ai-tools", json={})
     assert calls["n"] == 1

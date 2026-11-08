@@ -132,7 +132,8 @@ const SceneView: React.FC<{
   look: LookSpec | null;
   accent: string;
   paper: boolean;
-}> = ({ shot, sceneIndex, timeline, look, accent, paper }) => {
+  safe: number;
+}> = ({ shot, sceneIndex, timeline, look, accent, paper, safe }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const scene = timeline.scenes[sceneIndex];
@@ -180,10 +181,23 @@ const SceneView: React.FC<{
   const atmo: AtmosphereSpec | null = shot.atmosphere ?? look?.atmosphere ?? null;
 
   return (
-    // 根节点不能铺不透明底色：否则每镜一进场就用纯色盖住上一镜，
-    // TransitionIn 的 opacity 再淡入内容，观感就是“先黑一下再亮”——生硬的根源之一。
-    // 背景交给 SceneBackdrop（gen/图片/渐变都自带满屏底）。
-    <AbsoluteFill style={{ filter }}>
+    // 安全画幅：整镜（含背景/字幕/标签）缩到中央，被平台全屏裁掉的正好是纸色边框。
+    // 外层铺同色系渐变，缩放后四边不会露出突兀底色。
+    <AbsoluteFill
+      style={{
+        filter,
+        background: `linear-gradient(158deg, ${shot.colors[0]} 0%, ${shot.colors[1]} 100%)`,
+      }}
+    >
+      {/* 边框区域也吃一层同参数调色罩，避免安全画幅出现明暗接缝 */}
+      <AbsoluteFill
+        style={{
+          background: shot.colors[1],
+          mixBlendMode: "soft-light",
+          opacity: tintOpacity,
+        }}
+      />
+      <AbsoluteFill style={{ transform: `scale(${safe})`, transformOrigin: "50% 50%" }}>
       <div
         style={{
           position: "absolute",
@@ -214,8 +228,8 @@ const SceneView: React.FC<{
 
       {shot.overlay && <DVOverlay spec={shot.overlay} accent={accent} />}
 
-      {/* 镜头标签（year / label）：仅在无图时显示——后端占位图自带年份/标签水印 */}
-      {!shot.image && (shot.year || shot.label) && (
+      {/* 镜头标签（year / label）：图片镜头也显示——ComfyUI 插画无水印，label 有米白小板保证可读 */}
+      {(shot.year || shot.label) && (
         <div
           style={{
             position: "absolute",
@@ -249,6 +263,17 @@ const SceneView: React.FC<{
                 fontWeight: 700,
                 fontSize: 34,
                 textShadow: paper ? "0 2px 10px rgba(244,241,232,0.9)" : "0 2px 10px rgba(0,0,0,0.6)",
+                // 图片镜头：标签下垫米白小板（插画顶部常是深色区域，墨字会被吃掉）
+                ...(paper && shot.image
+                  ? {
+                      background: "rgba(244,239,230,0.9)",
+                      borderRadius: 10,
+                      padding: "5px 16px",
+                      border: "1px solid rgba(27,24,21,0.14)",
+                      boxShadow: "0 6px 18px rgba(27,24,21,0.2)",
+                      textShadow: "none",
+                    }
+                  : {}),
               }}
             >
               {shot.label}
@@ -271,8 +296,10 @@ const SceneView: React.FC<{
             { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
           )}
           age={frame - activeLine.startF}
+          plate={!!shot.image}
         />
       )}
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
@@ -296,6 +323,8 @@ export const DataVideo: React.FC<RenderProps> = () => {
   const grainOpacity = clamp(props.grainOpacity ?? 0.05, 0, 0.28);
   const vignette = look?.vignette ?? 0.8;
   const intro = props.titleCard !== false;
+  // 安全画幅（抖音全屏 cover 会裁左右约 13%）：0.6~1，1 = 旧行为。
+  const safe = clamp(props.safeScale ?? 1, 0.6, 1);
 
   return (
     <AbsoluteFill style={{ background: paper ? "#f4efe6" : "#0b0b10", fontFamily: FONT_STACK }}>
@@ -380,6 +409,7 @@ export const DataVideo: React.FC<RenderProps> = () => {
               look={look}
               accent={accent}
               paper={paper}
+              safe={safe}
             />
           </Sequence>
         );
@@ -419,13 +449,17 @@ export const DataVideo: React.FC<RenderProps> = () => {
           })
         : null}
 
-      {/* 片头标题序列 */}
+      {/* 片头标题序列（同样套安全画幅，片头底色与纸色一致，缩放后无接缝） */}
       {intro ? (
         <Sequence
           from={0}
           durationInFrames={Math.max(INTRO_FRAMES, Math.round(timeline.offset * FPS))}
         >
-          <DVTitleCard title={props.title} kicker={props.kicker} accent={accent} paper={paper} />
+          <AbsoluteFill style={{ background: paper ? "#f4efe6" : "#0b0b10" }}>
+            <AbsoluteFill style={{ transform: `scale(${safe})`, transformOrigin: "50% 50%" }}>
+              <DVTitleCard title={props.title} kicker={props.kicker} accent={accent} paper={paper} />
+            </AbsoluteFill>
+          </AbsoluteFill>
         </Sequence>
       ) : null}
 

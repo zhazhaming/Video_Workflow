@@ -3,20 +3,32 @@ import type {
   BgmTrack,
   Briefing,
   BriefingComment,
+  ComfyStatus,
   FlowAudioInfo,
   FlowGates,
   FlowState,
   HotDirection,
   HotItem,
   HotspotStatus,
+  ModelConfig,
   ModelInfo,
+  ModelTestResult,
   MusicBoardInfo,
   MusicChartStatus,
   MusicItem,
+  PipelineConfigUpdate,
+  PipelineRun,
+  PipelineStatus,
   ProjectDetail,
   ProjectMeta,
   ProjectSettings,
   PromptTemplate,
+  PublishCenterOverview,
+  PublishTask,
+  PublishTaskAction,
+  PublishTaskCreateInput,
+  PublishTaskUpdateInput,
+  CreatorLoginPoll,
   ResearchArticle,
   ResearchNode,
   ReviewReport,
@@ -31,16 +43,48 @@ import type {
   TaskStatus,
 } from "./types";
 
+// ---- 访问口令（远程部署/隧道暴露时的应用层认证）----
+
+const TOKEN_KEY = "vw.token";
+
+export const getToken = () => localStorage.getItem(TOKEN_KEY) ?? "";
+export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t);
+export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+
+/** 媒体标签（img/video/audio/导出链接）无法带 Header，用 URL 参数携带口令 */
+export const withToken = (url: string) => {
+  const t = getToken();
+  if (!t) return url;
+  return url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(t);
+};
+
+export const accessLogin = (token: string) =>
+  request<{ ok: boolean }>("/api/access/login", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const token = getToken();
   const r = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { "X-Access-Token": token } : {}),
+      ...(init?.headers ?? {}),
+    },
     ...init,
   });
+  if (r.status === 401) {
+    window.dispatchEvent(new Event("vw-unauthorized")); // App 收到后弹锁屏
+  }
   if (!r.ok) {
     let detail = `${r.status}`;
     try {
       const data = await r.json();
-      detail = data.detail ?? JSON.stringify(data);
+      // pydantic 校验错误的 detail 是对象数组，取 msg 拼接成可读文本
+      detail = Array.isArray(data.detail)
+        ? data.detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join("；")
+        : (data.detail ?? JSON.stringify(data));
     } catch {
       /* ignore */
     }
@@ -70,6 +114,23 @@ export const saveScript = (pid: string, script: ScriptDraft) =>
 
 export const listModels = () =>
   request<{ models: ModelInfo[] }>("/api/scripts/models");
+
+export const getModelConfigs = () =>
+  request<{ models: ModelConfig[] }>("/api/models/config");
+
+export const saveModelConfigs = (models: ModelConfig[]) =>
+  request<{ models: ModelConfig[] }>("/api/models/config", {
+    method: "PUT",
+    body: JSON.stringify({ models }),
+  });
+
+export const testModel = (
+  m: Pick<ModelConfig, "base_url" | "api_key" | "model" | "extra_headers">
+) =>
+  request<ModelTestResult>("/api/models/test", {
+    method: "POST",
+    body: JSON.stringify(m),
+  });
 
 export const listPromptTemplates = () =>
   request<{ templates: PromptTemplate[] }>("/api/scripts/prompts");
@@ -133,7 +194,7 @@ export const analyzeBgm = (name: string) =>
   });
 
 export const bgmAudioUrl = (name: string) =>
-  `/api/bgm/audio/${encodeURIComponent(name)}?t=${Date.now()}`;
+  withToken(`/api/bgm/audio/${encodeURIComponent(name)}?t=${Date.now()}`);
 
 // ---- 在线免版权曲库（Openverse / Jamendo，结果自带许可证）----
 
@@ -168,7 +229,7 @@ export const importOnlineBgm = (t: OnlineTrack) =>
   });
 
 export const ttsSampleUrl = (voice: string) =>
-  `/api/scripts/tts-sample?voice=${encodeURIComponent(voice)}&t=${Date.now()}`;
+  withToken(`/api/scripts/tts-sample?voice=${encodeURIComponent(voice)}&t=${Date.now()}`);
 
 export const optimizeScript = (script: ScriptDraft, instruction: string, modelId?: string) =>
   request<ScriptDraft>("/api/scripts/optimize", {
@@ -184,7 +245,7 @@ export const getActiveTask = (pid: string) =>
 
 export const getTask = (taskId: string) => request<TaskStatus>(`/api/tasks/${taskId}`);
 
-export const videoUrl = (pid: string) => `/api/projects/${pid}/video?t=${Date.now()}`;
+export const videoUrl = (pid: string) => withToken(`/api/projects/${pid}/video?t=${Date.now()}`);
 
 // ---- 自定义分镜图 ----
 
@@ -349,7 +410,7 @@ export const musicChartRefresh = (boards: string[] = []) =>
   );
 
 export const musicChartExportUrl = (board?: string) =>
-  `/api/music-chart/export.csv${board ? `?board=${encodeURIComponent(board)}` : ""}`;
+  withToken(`/api/music-chart/export.csv${board ? `?board=${encodeURIComponent(board)}` : ""}`);
 
 // 自定义策展榜（我的榜单）
 export const createCustomBoard = (name: string, desc = "") =>
@@ -407,7 +468,48 @@ export const publishDouyin = (
     body: JSON.stringify(payload),
   });
 
-export const publishCoverUrl = (pid: string) => `/api/projects/${pid}/publish/cover`;
+export const publishCoverUrl = (pid: string) => withToken(`/api/projects/${pid}/publish/cover`);
+
+// ---------- 发布中心（创作者中心自动化：扫码登录 + 预约发布） ----------
+export const publishCenterOverview = (refresh = false) =>
+  request<PublishCenterOverview>(`/api/publish/center/overview${refresh ? "?refresh=1" : ""}`);
+
+export const createPublishTask = (input: PublishTaskCreateInput) =>
+  request<PublishTask>("/api/publish/center/tasks", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+export const updatePublishTask = (id: string, patch: PublishTaskUpdateInput) =>
+  request<PublishTask>(`/api/publish/center/tasks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+
+export const publishTaskAction = (id: string, action: PublishTaskAction) =>
+  request<PublishTask>(`/api/publish/center/tasks/${id}/${action}`, { method: "POST" });
+
+export const deletePublishTask = (id: string) =>
+  request<{ ok: boolean }>(`/api/publish/center/tasks/${id}`, { method: "DELETE" });
+
+export const creatorLoginStart = () =>
+  request<CreatorLoginPoll>("/api/publish/creator/login/start", { method: "POST" });
+
+export const creatorLoginPoll = () =>
+  request<CreatorLoginPoll>("/api/publish/creator/login/poll");
+
+export const creatorLoginCancel = () =>
+  request<{ ok: boolean }>("/api/publish/creator/login/cancel", { method: "POST" });
+
+export const creatorLogout = () =>
+  request<{ ok: boolean }>("/api/publish/creator/logout", { method: "POST" });
+
+/** 登录二维码（每次取最新的截图，浏览器内刷新避免缓存） */
+export const creatorQrUrl = () => withToken(`/api/publish/creator/qr?t=${Date.now()}`);
+
+/** 自动化失败截图（tag: fail | cover | collection） */
+export const publishScreenshotUrl = (taskId: string, tag = "fail") =>
+  withToken(`/api/publish/screenshots/${encodeURIComponent(taskId)}-${tag}.png`);
 
 // ---------- 六步视频流水线（flow） ----------
 
@@ -472,7 +574,7 @@ export const deleteFlowAudio = (pid: string, kind: "full" | "shot", index?: numb
   });
 
 export const flowAudioUrl = (pid: string, path: string) =>
-  `/api/projects/${pid}/flow/audio-file?path=${encodeURIComponent(path)}&t=${Date.now()}`;
+  withToken(`/api/projects/${pid}/flow/audio-file?path=${encodeURIComponent(path)}&t=${Date.now()}`);
 
 export const getFlowImages = (pid: string) =>
   request<{ scenes: SceneImages[] }>(`/api/projects/${pid}/flow/images`);
@@ -481,6 +583,14 @@ export const startFlowImages = (pid: string, modelId?: string) =>
   request<{ task_id: string }>(`/api/projects/${pid}/flow/images/search`, {
     method: "POST",
     body: JSON.stringify({ model_id: modelId || null }),
+  });
+
+export const comfyStatus = () => request<ComfyStatus>("/api/comfy/status");
+
+export const startFlowAiImages = (pid: string, modelId?: string, scenes?: number[]) =>
+  request<{ task_id: string }>(`/api/projects/${pid}/flow/images/ai`, {
+    method: "POST",
+    body: JSON.stringify({ model_id: modelId || null, scenes: scenes ?? null }),
   });
 
 export const selectFlowImage = (pid: string, sceneIdx: number, candidateId?: string) =>
@@ -516,7 +626,7 @@ export const startFlowStyles = (pid: string, modelId?: string) =>
   });
 
 export const styleSampleUrl = (pid: string, i: number) =>
-  `/api/projects/${pid}/flow/style-sample/${i}?t=${Date.now()}`;
+  withToken(`/api/projects/${pid}/flow/style-sample/${i}?t=${Date.now()}`);
 
 export const selectFlowStyle = (pid: string, index: number) =>
   request<{ task_id: string }>(`/api/projects/${pid}/flow/styles/select`, {
@@ -548,7 +658,7 @@ export const startFlowPreview = (pid: string) =>
   request<{ task_id: string }>(`/api/projects/${pid}/flow/render/preview`, { method: "POST" });
 
 export const flowPreviewUrl = (pid: string) =>
-  `/api/projects/${pid}/flow/video-preview?t=${Date.now()}`;
+  withToken(`/api/projects/${pid}/flow/video-preview?t=${Date.now()}`);
 
 export const approveFlowPreview = (pid: string) =>
   request<{ gates: FlowGates }>(`/api/projects/${pid}/flow/render/preview/approve`, {
@@ -557,3 +667,41 @@ export const approveFlowPreview = (pid: string) =>
 
 export const startFlowFull = (pid: string) =>
   request<{ task_id: string }>(`/api/projects/${pid}/flow/render/full`, { method: "POST" });
+
+// ---- 视频流水线（每日热点自动出片）----
+
+export const pipelineStatus = () => request<PipelineStatus>("/api/pipeline/status");
+
+export const pipelineUpdateConfig = (cfg: PipelineConfigUpdate) =>
+  request<PipelineStatus>("/api/pipeline/config", {
+    method: "PUT",
+    body: JSON.stringify(cfg),
+  });
+
+export const pipelineRunNow = (count?: number) =>
+  request<{ ok: boolean; message: string }>(
+    `/api/pipeline/run${count ? `?count=${count}` : ""}`,
+    { method: "POST" }
+  );
+
+export const pipelineRuns = (limit = 20) =>
+  request<PipelineRun[]>(`/api/pipeline/runs?limit=${limit}`);
+
+export const pipelineRunLog = (runId: string, pid: string, tail = 40) =>
+  request<{ lines: string[] }>(
+    `/api/pipeline/runs/${runId}/log?pid=${encodeURIComponent(pid)}&tail=${tail}`
+  );
+
+export const projectCoverUrl = (pid: string) => withToken(`/api/projects/${pid}/publish/cover?t=${Date.now()}`);
+
+export const pipelineConfirmRun = (
+  runId: string,
+  body: { indices: number[]; schedule: boolean }
+) =>
+  request<PipelineRun>(`/api/pipeline/runs/${runId}/confirm`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const pipelineProduceNow = (runId: string) =>
+  request<PipelineRun>(`/api/pipeline/runs/${runId}/produce`, { method: "POST" });

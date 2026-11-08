@@ -14,6 +14,8 @@ import type { DouyinStatus, PublishCopy, PublishPackage } from "../types";
 interface Props {
   pid: string;
   modelId: string | null;
+  /** 跳转到「发布」Tab 预约发布（创作者中心自动化） */
+  onSchedulePublish?: (pid: string) => void;
 }
 
 type Platform = "douyin" | "xhs";
@@ -21,7 +23,7 @@ type Platform = "douyin" | "xhs";
 const PLATFORM_LABEL: Record<Platform, string> = { douyin: "抖音", xhs: "小红书" };
 
 /** 平台发布面板：AI 文案 + 封面预览 + 抖音官方 API 推送 / 双平台半自动推送 */
-export const PublishPanel: React.FC<Props> = ({ pid, modelId }) => {
+export const PublishPanel: React.FC<Props> = ({ pid, modelId, onSchedulePublish }) => {
   const [pkg, setPkg] = useState<PublishPackage | null>(null);
   const [dyStatus, setDyStatus] = useState<DouyinStatus | null>(null);
   const [platform, setPlatform] = useState<Platform>("douyin");
@@ -210,6 +212,11 @@ export const PublishPanel: React.FC<Props> = ({ pid, modelId }) => {
           )}
 
           <div className="btn-row">
+            {onSchedulePublish && (
+              <button className="btn primary wide" onClick={() => onSchedulePublish(pid)}>
+                📅 预约发布（自动上传：标题/简介/双封面/合集/声明）
+              </button>
+            )}
             <button className="btn wide" disabled={!draft} onClick={semiAutoPublish}>
               复制文案并打开{PLATFORM_LABEL[platform]}上传页
             </button>

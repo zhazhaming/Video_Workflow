@@ -13,6 +13,7 @@
 import json
 import math
 import re
+import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -37,7 +38,7 @@ from ..schemas import (
     TimedLine,
     now_iso,
 )
-from . import beat, bgm as bgm_svc, director, llm, music, pic_search, renderer, voice, websearch
+from . import beat, bgm as bgm_svc, comfy, director, llm, music, pic_search, renderer, voice, websearch
 from .pipeline import (
     assemble_props,
     bind_project,
@@ -563,12 +564,21 @@ def select_image(pid: str, scene_idx: int, candidate_id: str | None) -> dict:
         if not cand:
             raise RuntimeError("候选图不存在或已过期，请重新搜图")
         dest = REMOTION_PUBLIC / PIC_PUBLIC_SUBDIR / pid
-        try:
-            path = pic_search.download_image(
-                cand["image_url"], dest, f"{scene_idx:02d}-{_slug(cand.get('title') or '')}"
-            )
-        except Exception as e:  # noqa: BLE001
-            raise RuntimeError(f"图片下载失败：{e}") from e
+        dest.mkdir(parents=True, exist_ok=True)
+        if cand.get("local_path"):
+            # AI 生图候选：文件已在本地，直接复制（下载器走 HTTP，没必要绕一圈）
+            src = Path(cand["local_path"])
+            if not src.exists():
+                raise RuntimeError("AI 生成的候选图文件已丢失，请重新生成")
+            path = dest / f"{scene_idx:02d}-ai.png"
+            shutil.copyfile(src, path)
+        else:
+            try:
+                path = pic_search.download_image(
+                    cand["image_url"], dest, f"{scene_idx:02d}-{_slug(cand.get('title') or '')}"
+                )
+            except Exception as e:  # noqa: BLE001
+                raise RuntimeError(f"图片下载失败：{e}") from e
         sc["selected"] = candidate_id
         sc["custom_file"] = None
         sc["downloaded"] = path.relative_to(REMOTION_PUBLIC).as_posix()
@@ -615,6 +625,108 @@ def upload_scene_image(pid: str, scene_idx: int, filename: str, content: bytes) 
     sc["downloaded"] = (Path(PIC_PUBLIC_SUBDIR) / pid / name).as_posix()
     _write_json(pid, "images.json", data)
     return data
+
+
+# ---------- 第 3 步补充：ComfyUI AI 生图 ----------
+
+AI_CANDIDATE_DIR = "ai"  # storage/projects/<pid>/ai/ 下存候选原图
+
+
+def ai_candidate_dir(pid: str) -> Path:
+    return _pdir(pid) / AI_CANDIDATE_DIR
+
+
+def _skeleton_scenes(pid: str) -> list[dict]:
+    """没有 images.json 时按脚本造一个空骨架（AI 生图不依赖检索词）。"""
+    script = _load_script(pid)
+    return [
+        {
+            "index": i,
+            "query_en": "",
+            "query_zh": "",
+            "note": "",
+            "candidates": [],
+            "selected": None,
+            "custom_file": None,
+            "downloaded": None,
+        }
+        for i, _ in enumerate(script.shots, 1)
+    ]
+
+
+def ensure_ai_prompts(pid: str, model_id: str | None) -> list[dict]:
+    """给 images.json 每幕补中文生图提示词（generate_image_prompts 一次生成全部分镜，落库缓存）。"""
+    data = load_images(pid)
+    scenes = data.get("scenes") or _skeleton_scenes(pid)
+    data["scenes"] = scenes
+    missing = [sc for sc in scenes if not (sc.get("prompt_cn") or "").strip()]
+    if missing:
+        prompts = llm.generate_image_prompts(_load_script(pid), model_id)
+        for sc, prompt in zip(scenes, prompts):
+            if not (sc.get("prompt_cn") or "").strip():
+                sc["prompt_cn"] = str(prompt or "").strip()
+        _write_json(pid, "images.json", data)
+    return scenes
+
+
+def run_ai_images(pid: str, model_id: str | None, update, scene_indexes: list[int] | None = None) -> None:
+    """逐幕 AI 生图：中文提示词 → LLM 翻英文 → ComfyUI 出图 → 存为该幕候选（不自动选用）。"""
+    if not comfy.is_configured():
+        raise RuntimeError("backend/.env 未配置 COMFYUI_URL，无法 AI 生图")
+    scenes = ensure_ai_prompts(pid, model_id)
+    targets = [sc for sc in scenes if not scene_indexes or sc["index"] in scene_indexes]
+    if not targets:
+        raise RuntimeError("没有可生图的幕（scene_indexes 不匹配）")
+    ck_name = ""
+    done = 0
+    for sc in targets:
+        idx = sc["index"]
+        prompt_cn = (sc.get("prompt_cn") or "").strip()
+        if not prompt_cn:
+            sc["ai_error"] = "该幕没有中文提示词，请先执行找图生成检索词"
+            continue
+        update(stage="imagery", message=f"第 {idx} 幕：翻译提示词…")
+        try:
+            prompt_en, is_portrait = llm.translate_image_prompt(prompt_cn, model_id)
+            sc["prompt_en_ai"] = prompt_en
+            sc["portrait"] = is_portrait
+            variant = "portrait" if is_portrait else "scene"
+            update(
+                stage="imagery",
+                message=f"第 {idx} 幕：ComfyUI 出图中（{'人像' if is_portrait else '场景'}模型｜{prompt_en[:36]}…）",
+            )
+            blob, seed, ck_name = comfy.txt2img(prompt_en, variant=variant)
+            dest_dir = ai_candidate_dir(pid)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            name = f"{idx:02d}-{seed}.png"
+            (dest_dir / name).write_bytes(blob)
+            cand = {
+                "id": f"ai-{seed}",
+                "provider": "comfy",
+                "title": f"AI 生图 · seed {seed}",
+                "creator": ck_name.replace(".safetensors", ""),
+                "license": "本地生成",
+                "page_url": f"/api/projects/{pid}/images/ai/{name}",
+                "image_url": f"/api/projects/{pid}/images/ai/{name}",
+                "thumb_url": f"/api/projects/{pid}/images/ai/{name}",
+                "width": comfy.WIDTH,
+                "height": comfy.HEIGHT,
+                "local_path": str(dest_dir / name),
+            }
+            cands = [c for c in (sc.get("candidates") or []) if not c.get("id", "").startswith("ai-")]
+            sc["candidates"] = [cand] + cands  # 新图排最前；同幕旧 AI 候选只留最近一次
+            sc["ai_error"] = ""
+        except Exception as e:  # noqa: BLE001 — 单幕失败不阻断其它幕
+            import traceback as _tb
+
+            sc["ai_error"] = f"AI 生图失败：{e}｜{_tb.format_exc()[-120:]}"[:260]
+        done += 1
+        _write_json(pid, "images.json", {"scenes": scenes, "generated_at": now_iso()})
+        update(stage="imagery", message=f"AI 生图进度 {done}/{len(targets)} 幕…")
+    _write_json(pid, "images.json", {"scenes": scenes, "generated_at": now_iso()})
+    ok = sum(1 for sc in targets if not sc.get("ai_error"))
+    tail = f" · checkpoint：{ck_name.replace('.safetensors', '')}" if ck_name else ""
+    update(stage="imagery", message=f"AI 生图完成：{ok}/{len(targets)} 幕出图{tail}（选中后才会用于渲染）")
 
 
 # ---------- 第 4 步：定样式 + 写分镜 ----------
@@ -685,6 +797,7 @@ def _style_sample_props(script: ScriptDraft, proposal: dict, image_rels: list[st
         grain_opacity=0.05,
         look=LookSpec(**proposal["look"]),
         kicker=proposal.get("kicker") or None,
+        safe_scale=0.8,  # 抖音竖屏安全画幅（与最终成片一致）
     )
 
 
@@ -973,6 +1086,7 @@ def run_render(pid: str, mode: str, update) -> None:
             bgm=_build_bgm(pid), plan=plan, grain_opacity=grain,
             prefer_images=True, with_line_audio=(audio_mode == "tts"),
             market=_load_market(pid),
+            safe_scale=(plan or {}).get("safeScale", 0.8),  # 抖音竖屏安全画幅默认
         ),
         pid,
     )

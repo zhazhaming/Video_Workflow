@@ -8,13 +8,14 @@
 import json
 import os
 import re
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
 
 from ..config import MODELS_CONFIG, PROMPTS_CONFIG
-from ..schemas import GenRequest, OptimizeRequest, ScriptDraft
+from ..schemas import GenRequest, ModelEntryIO, OptimizeRequest, ScriptDraft
 
 SYSTEM_PROMPT = """你是资深竖屏短视频编导。你只输出 JSON，不输出任何其他文字。
 
@@ -78,6 +79,8 @@ class ModelEntry:
     api_key: str
     model: str
     is_default: bool = False
+    # 附加请求头（如 opencode Go 的 x-opencode-session）
+    extra_headers: dict[str, str] = field(default_factory=dict)
 
     @property
     def available(self) -> bool:
@@ -108,6 +111,10 @@ def load_models(path: Path | None = None, env: dict[str, str] | None = None) -> 
                 api_key=_resolve(m.get("api_key", ""), env),
                 model=_resolve(m.get("model", ""), env),
                 is_default=bool(m.get("default", False)),
+                extra_headers={
+                    str(k): str(v)
+                    for k, v in (m.get("extra_headers") or {}).items()
+                },
             )
         )
     return entries
@@ -127,6 +134,120 @@ def list_model_infos() -> list[dict]:
         }
         for m in models
     ]
+
+
+def get_model_configs() -> list[dict]:
+    """models.json 的完整配置（含 api_key），供前端设置弹窗编辑。
+
+    本项目 models.json 即本地明文密钥配置（已 gitignore，模板见 models.example.json）。
+    """
+    return [
+        {
+            "id": m.id,
+            "name": m.name,
+            "base_url": m.base_url,
+            "api_key": m.api_key,
+            "model": m.model,
+            "default": m.is_default,
+            "extra_headers": dict(m.extra_headers),
+            "available": m.available,
+        }
+        for m in load_models()
+    ]
+
+
+def save_model_configs(entries: list[ModelEntryIO], path: Path | None = None) -> list[dict]:
+    """把前端设置弹窗的模型列表写回 models.json（旧文件备份 .bak），返回落盘后的配置。"""
+    cleaned, seen = [], set()
+    for e in entries:
+        eid = (e.id or "").strip()
+        if not eid:
+            raise ValueError("模型 id 不能为空")
+        if eid in seen:
+            raise ValueError(f"模型 id 重复：{eid}")
+        seen.add(eid)
+        cleaned.append(
+            {
+                "id": eid,
+                "name": (e.name or "").strip() or eid,
+                "base_url": (e.base_url or "").strip(),
+                "api_key": (e.api_key or "").strip(),
+                "model": (e.model or "").strip(),
+                "default": bool(e.default),
+                "extra_headers": {
+                    str(k).strip(): str(v).strip()
+                    for k, v in (e.extra_headers or {}).items()
+                    if str(k).strip()
+                },
+            }
+        )
+    path = path or MODELS_CONFIG
+    if path.exists():
+        backup = path.parent / (path.name + ".bak")
+        backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"models": cleaned}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return get_model_configs()
+
+
+def _test_error(e: Exception, url: str = "") -> str:
+    """把测试连接的异常转成用户可读的一句话（HTTP 错误附上实际请求的 URL 便于排查）。"""
+    suffix = f"（POST {url}）" if url else ""
+    if isinstance(e, httpx.HTTPStatusError):
+        return f"HTTP {e.response.status_code}：{e.response.text[:200]}{suffix}"
+    if isinstance(e, httpx.ConnectError):
+        return f"连接失败（地址不可达？）：{e}"
+    if isinstance(e, httpx.TimeoutException):
+        return "请求超时（20s）"
+    return str(e)[:200]
+
+
+def test_model(
+    base_url: str,
+    api_key: str,
+    model: str,
+    timeout: float = 20.0,
+    extra_headers: dict[str, str] | None = None,
+) -> dict:
+    """对 OpenAI 兼容端点发一次最小补全请求，测试连通性与密钥（可测未保存的草稿值）。"""
+    base_url = (base_url or "").strip().rstrip("/")
+    started = time.monotonic()
+    if not base_url or not model:
+        return {"ok": False, "latency_ms": 0, "error": "base_url 与 model 不能为空"}
+    url = f"{base_url}/chat/completions"
+    try:
+        resp = httpx.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                **(extra_headers or {}),
+            },
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": "回复：OK"}],
+                "max_tokens": 8,
+                "temperature": 0,
+            },
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        choices = data.get("choices") or [{}]
+        reply = ((choices[0].get("message") or {}).get("content") or "").strip()
+        return {
+            "ok": True,
+            "latency_ms": int((time.monotonic() - started) * 1000),
+            "reply": reply[:80],
+        }
+    except Exception as e:  # noqa: BLE001
+        return {
+            "ok": False,
+            "latency_ms": int((time.monotonic() - started) * 1000),
+            "error": _test_error(e, url),
+        }
 
 
 def load_prompt_templates(path: Path | None = None) -> list[dict]:
@@ -167,16 +288,16 @@ def _pick(model_id: str | None) -> ModelEntry:
         for m in models:
             if m.id == model_id:
                 if not m.available:
-                    raise RuntimeError(f"模型「{m.name}」未配置完整，请在 backend/.env 或 models.json 中补齐")
+                    raise RuntimeError(f"模型「{m.name}」未配置完整，请在「⚙ 模型 API」里补齐密钥与接口地址")
                 return m
-        raise RuntimeError(f"未知模型：{model_id}")
+        # id 不在注册表（如 vibe 项目遗留的 "agent" 占位）→ 静默回退默认可用模型
     for m in models:
         if m.is_default and m.available:
             return m
     for m in models:
         if m.available:
             return m
-    raise RuntimeError("没有可用的模型：请在 backend/.env 配置 API 密钥与接口地址")
+    raise RuntimeError("没有可用的模型：请在「⚙ 模型 API」里配置任一模型的密钥与接口地址")
 
 
 def _extract_json(text: str) -> dict:
@@ -200,7 +321,10 @@ def _chat(
     entry = _pick(model_id)
     resp = httpx.post(
         f"{entry.base_url}/chat/completions",
-        headers={"Authorization": f"Bearer {entry.api_key}"},
+        headers={
+            "Authorization": f"Bearer {entry.api_key}",
+            **entry.extra_headers,
+        },
         json={
             "model": entry.model,
             "messages": [
@@ -484,6 +608,40 @@ def _chat_json(
     raise last_err  # type: ignore[misc]
 
 
+TRANSLATE_PROMPT_SYSTEM = """你是专业的文生图提示词翻译（中译英），面向 SDXL 类以英文为主的文本编码器。
+
+只输出 JSON：{"prompt_en": "翻译结果", "portrait": true/false}
+
+prompt_en 要求：
+1. 完整保留原文的主体、场景、构图、视角、光线、氛围、艺术风格，不增删画面信息
+2. 使用地道的 Stable Diffusion 提示词风格（逗号分隔的短语，不写完整句子）
+3. 数字与比例照抄（如 9:16），人名/地名按通用英文译名
+
+portrait 判断（用于路由生图模型）：
+- 画面主体是人物特写/人像/单人表情动作主导（写真、头像、人物情绪）→ true
+- 环境场景、街景、大场面、物件、图表感画面，或人物只是场景中的小元素 → false"""
+
+
+
+def translate_image_prompt(text_cn: str, model_id: str | None) -> tuple[str, bool]:
+    """中文分镜提示词 → (英文 SDXL 提示词, 是否人像主导)，人像标记用于路由生图模型。"""
+    text = (text_cn or "").strip()
+    if not text:
+        raise ValueError("提示词为空，无法翻译")
+    if re.fullmatch(r"[\x00-\x7F]+", text):  # 已是纯 ASCII，无需翻译
+        return text, False
+    data = _chat_json(
+        model_id,
+        text,
+        temperature=0.2,
+        system_prompt=TRANSLATE_PROMPT_SYSTEM,
+    )
+    out = str(data.get("prompt_en") or "").strip()
+    if not out:
+        raise RuntimeError("翻译结果为空")
+    return out[:600], bool(data.get("portrait"))
+
+
 def _shot_digest(s, i: int) -> str:
     """把一个镜头压成几行文本（供导演/审查提示词用）。"""
     text = " / ".join(l.text for l in s.lines)
@@ -673,6 +831,7 @@ TOOL_META_SYSTEM = """你是效率工具测评师，帮中国职场人（运营�
 只输出 JSON，不输出任何其他文字：
 {"tools": [
   {"ref": "原样返回仓库名（owner/repo）",
+   "intro": "中文介绍：把仓库英文描述翻译成通顺中文（≤50字），保留它是什么/能干什么的关键信息，描述为空就按仓库名合理概括",
    "audience": ["适合人群，从：程序员/产品经理/设计师/运营·自媒体/行政·办公/硬件工程师/老板·管理者/学生·研究者/政府·事业单位/全员通用 中选1~3个"],
    "use": "一句话说明它是什么、解决什么问题（≤36字）",
    "why": "提效点/为什么值得试（≤36字）"}
@@ -680,7 +839,7 @@ TOOL_META_SYSTEM = """你是效率工具测评师，帮中国职场人（运营�
 
 规则：
 1. tools 数量必须等于输入数量，顺序一一对应，ref 原样返回
-2. use/why 必须基于仓库描述，英文描述翻译成中文大白话，不编造仓库里没有的功能
+2. intro/use/why 必须基于仓库描述，英文描述翻译成中文大白话，不编造仓库里没有的功能
 3. 受众宁可保守：纯开发库不要硬塞给运营或行政
 4. 只输出 JSON"""
 

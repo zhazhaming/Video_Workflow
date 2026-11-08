@@ -285,6 +285,7 @@ class TaskManager:
                 assemble_props(
                     script, durations, image_rels,
                     bgm=bgm, plan=plan, grain_opacity=grain_opacity, market=market,
+                    safe_scale=(plan or {}).get("safeScale", 0.8),  # 抖音竖屏安全画幅默认
                 ),
                 project_id,
             )

@@ -47,6 +47,31 @@ class OptimizeRequest(BaseModel):
     model_id: Optional[str] = None
 
 
+# ---- 模型 API 配置（前端设置弹窗读写 models.json）----
+
+
+class ModelEntryIO(BaseModel):
+    id: str = Field(default="", max_length=64)  # 空/重复 id 由服务层给出中文报错
+    name: str = Field(default="", max_length=80)
+    base_url: str = Field(default="", max_length=300)
+    api_key: str = Field(default="", max_length=300)
+    model: str = Field(default="", max_length=120)
+    default: bool = False
+    # 附加请求头（如 opencode Go 的 x-opencode-session），键值均为字符串
+    extra_headers: dict[str, str] = Field(default_factory=dict, max_length=16)
+
+
+class ModelsSave(BaseModel):
+    models: list[ModelEntryIO] = Field(default=[], max_length=20)
+
+
+class ModelTestReq(BaseModel):
+    base_url: str = Field(default="", max_length=300)  # 空值由服务层给出中文报错
+    api_key: str = Field(default="", max_length=300)
+    model: str = Field(default="", max_length=120)
+    extra_headers: dict[str, str] = Field(default_factory=dict, max_length=16)
+
+
 # ---- 渲染阶段（配音后生成，含实测时长与素材路径）----
 # 这三个模型直接喂给 Remotion（TS 端），序列化时输出 camelCase（durationSec 等）。
 
@@ -225,18 +250,78 @@ class MarketEvent(_CamelModel):
     sse_detail: str = Field(default="", max_length=48)
     spx_detail: str = Field(default="", max_length=48)
     note: str = Field(default="", max_length=60)
+    # ---- 日线 march 版式扩展 ----
+    chg: Optional[float] = None  # 当日涨跌幅 %
+    close: Optional[float] = None  # 当日收盘
+    kind: Optional[str] = Field(default=None, pattern="^(up|down|peak)$")  # 特效方向
+    tier: Optional[int] = Field(default=None, ge=1, le=2)  # 1=大事件（更长慢放+强特效）
+
+
+class DailyPoint(_CamelModel):
+    """单日收盘（march 逐日行军用）；chg 相对窗口基准（首日为窗口前收盘）。
+
+    life K 线扩展：open/high/low 为当年蜡烛四价（万元）；amount 复用为当年总支出强度。
+    """
+
+    date: str
+    close: float
+    chg: Optional[float] = None
+    amount: Optional[float] = None  # 沪市成交额（元）/ life：当年总支出（万元）
+    open: Optional[float] = None  # 蜡烛开盘
+    high: Optional[float] = None
+    low: Optional[float] = None
+
+
+class MarketSummary(_CamelModel):
+    """日线窗口统计摘要（recap 版式与钩子文案用）。"""
+
+    days: int
+    start: str
+    end: str
+    base_close: float
+    start_close: float
+    end_close: float
+    chg_pct: float
+    high_close: float
+    high_close_date: str
+    high_intra: float
+    high_intra_date: str
+    low_close: float
+    low_close_date: str
+    low_intra: float
+    low_intra_date: str
+    max_dd: float
+    max_dd_pair: list[str] = []
+    up_days: int
+    down_days: int
+    max_amt: float
+    max_amt_date: str
+    min_amt: float
+    min_amt_date: str
+    top_up: Optional[DailyPoint] = None
+    top_down: Optional[DailyPoint] = None
+
+
+class MarketMonthly(_CamelModel):
+    """单月涨跌；日线版 overview 用它画月度红蓝条形。"""
+
+    month: str = Field(min_length=7, max_length=7)  # YYYY-MM
+    sse_ret: float
+    spx_ret: float
 
 
 class MarketMarker(_CamelModel):
     year: int
     text: str = Field(min_length=1, max_length=12)
     side: str = Field(default="up", pattern="^(up|down)$")
+    date: Optional[str] = None  # 交易日级定位（YYYY-MM-DD）；缺省按 year 定位
 
 
 class MarketShot(_CamelModel):
-    """单镜行情图配置：overview=20 年全程，zoom=事件窗口，finale=总结。"""
+    """单镜行情图配置：overview=全程，zoom=事件窗口，finale=总结，
+    march=逐日行军，hook=开盘钩子，recap=日级成绩单，terminal=深色终端双账户。"""
 
-    mode: str = Field(pattern="^(overview|zoom|finale)$")
+    mode: str = Field(pattern="^(overview|zoom|finale|march|hook|recap|terminal|ledger|lifehook|lifemarch)$")
     start: Optional[str] = None
     end: Optional[str] = None
     event_id: Optional[str] = None
@@ -244,6 +329,20 @@ class MarketShot(_CamelModel):
     kicker: Optional[str] = None
     title: Optional[str] = None
     takeaway: Optional[str] = None
+    # ---- terminal 深色终端版式 ----
+    variant: Optional[str] = Field(default=None, pattern="^(hook|grow|event|verdict)$")
+    # ---- march 逐日行军 ----
+    day_times: Optional[list[float]] = None  # 每个交易日起始秒（相对本镜开头，设计脚本预计算）
+    event_ids: Optional[list[str]] = None  # 本镜要慢放/特效的事件 id（按出现顺序）
+    slow_frames: Optional[dict[str, int]] = None  # event_id -> 慢放帧数（T1=108/T2=78/today=126）
+
+
+class StageBand(_CamelModel):
+    """life K 线人生阶段色带（岁区间；from/to 为 JSON 键名）。"""
+
+    from_age: int = Field(alias="from")
+    to_age: int = Field(alias="to")
+    label: str
 
 
 class MarketData(_CamelModel):
@@ -251,6 +350,10 @@ class MarketData(_CamelModel):
     points: list[MarketPoint]
     annual: list[MarketAnnual]
     events: list[MarketEvent]
+    monthly: Optional[list[MarketMonthly]] = None  # 日线版可选；缺省时 overview 仍用 annual
+    daily: Optional[list[DailyPoint]] = None  # 日线行军数据（march/hook/recap 用）
+    summary: Optional[MarketSummary] = None  # 窗口统计摘要
+    stages: Optional[list[StageBand]] = None  # life K 线人生阶段色带
 
 
 class RenderShot(_CamelModel):
@@ -300,6 +403,7 @@ class RenderProps(_CamelModel):
     kicker: Optional[str] = None  # 开场标题上方小字
     sfx: Optional[bool] = None  # 转场/高潮音效开关（缺省 true）
     narration_audio: Optional[NarrationAudioSpec] = None  # 整段口播旁白（自带配音模式）
+    safe_scale: Optional[float] = Field(default=None, ge=0.6, le=1.0)  # 安全画幅缩放（抖音全屏 cover 裁左右 ~13%；1=旧行为）
     market: Optional[MarketData] = None  # 行情图全局数据（MotionShow market 版式）
 
     def to_props_json(self) -> str:

@@ -79,7 +79,9 @@ export const DVSubtitle: React.FC<{
   accent?: string;
   entering?: number;
   age?: number;
-}> = ({ line, look, accent, entering = 1, age }) => {
+  /** 图片镜头：字幕下垫米白纸底板，对比度与插画内容解耦（复古 caption strip 质感） */
+  plate?: boolean;
+}> = ({ line, look, accent, entering = 1, age, plate = false }) => {
   const frame = useCurrentFrame();
   const lineAge = Math.max(0, age ?? frame);
   const style = look?.subtitleStyle === "pill" ? "pill" : "bold";
@@ -184,6 +186,20 @@ export const DVSubtitle: React.FC<{
             borderRadius: 26,
             padding: "22px 40px",
             border: "1px solid rgba(255,255,255,0.14)",
+            width: "100%",
+          }}
+        >
+          {textEl}
+        </div>
+      ) : plate ? (
+        <div
+          style={{
+            width: "100%",
+            background: "rgba(244,239,230,0.9)",
+            borderRadius: 18,
+            padding: "18px 30px",
+            border: "1.5px solid rgba(27,24,21,0.14)",
+            boxShadow: "0 10px 28px rgba(27,24,21,0.22)",
           }}
         >
           {textEl}

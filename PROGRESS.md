@@ -743,5 +743,211 @@ headless 默认、16 种错误码且仅 `disposition.retry=safe` 可重试。
 
 产物：`backend/storage/renders/<pid>/{final.mp4,cover.jpg,props.json}`；
 文案与投放策略见 `storage/projects/agent-desktop-2026/publish.md`「三版成片投放策略」。
+## 2026-11-05/06 《油车，输了吗？》中国油车 vs 电车 近 6 年渗透率趋势（vibe 数据科普 · from_scratch）
 
+> 用户需求：中国油车与电车近 5 年市场占有量趋势的 vibe 科普视频；**数据与素材必须真实**；发抖音；
+> **不要深色 AI 味背景**；动效精美；口播/配音要能吸引留存。
 
+### 成片
+| 项 | 值 |
+|---|---|
+| 项目 id | `auto-market-trend` |
+| 标题 | 油车，输了吗？中国车市 6 年大逆转 |
+| 成片 | `backend/storage/renders/auto-market-trend/final.mp4`（70.72s / 2121 帧 / 38.99 MB / 1080×1920@30 / AAC 48k） |
+| 附件 | `cover.jpg`、`preview.mp4`(12s)、`props.json`、`publish_copy.json`、`qa_report.json`、26 张 `qa_*.jpg` |
+| 结构 | 12 镜：钩子(100 人里 6 个选电车) → 100 格剖分 6→68 → 6 年曲线 → 五个年度台阶 → 2024.07 单月首破 50%(51.1%) → 2025 全年 53.9% → 三大原因 → 销量条形(110.9→1280.9 万辆) → **反转：存量只有 13.19%** → 电车代价(保费 1.7 倍/260 万辆脱保/79% 私桩) → 油电共存 → 互动 CTA |
+| 判定 | `from_scratch`（`storage/projects/auto-market-trend/plan.json`；与行星/宇宙模板域无关，画面全部自绘，无深色背景） |
+
+### 数据（全部可溯源：`briefs/auto-trend-facts.md` 47 条来源 + `storage/projects/auto-market-trend/research.json`）
+- 乘联分会（CPCA）新能源乘用车**国内零售**渗透率：2020 5.8% / 2021 14.8% / 2022 27.6% / 2023 35.7% / 2024 47.6% / 2025 53.94%（=1280.9/2374.4，计算值）/ 2026.10 67.8%
+- 2024-07 单月首次过半 51.1%（87.8/172 可复核）；「50.8%」查无出处已禁用
+- 存量（公安部交管局 2026-06）：汽车 3.71 亿辆、新能源 4897 万辆、13.19%（十台里约 1.32 台）
+- 2026 1-10 月乘用车零售 1502.7 万辆（-22%）；购置税 2024-2025 免征、2026 起减半（gov.cn 公告 2023 年第 10 号）
+- 口径纪律：零售 vs 批发 vs 中汽协总销量严禁混用，屏幕标注口径与来源
+
+### 代码与资产
+1. Remotion 组合 `remotion-life-sim/src/vibe-auto/`（`types.ts` 契约 / `fx.tsx` 明亮纸感设计系统 / `slides.tsx` 12 个自绘场景 / `AutoTrendVibe.tsx` / `data.ts`），`Root.tsx` 注册 `AutoTrendVibe`
+2. 驱动 `backend/tools/run_auto_trend.py`：热读 `story.json` + `research.json` → edge-tts 逐镜实测 → BGM 169 拍点锁镜 → 旁白整轨预混 → props → 渲染 → QA；内置 caption 逐字比对/数字溯源表/数字审计三道自检
+3. 数据取证工具 `backend/tools/probe_auto_data.py`（360 搜索 `data-mdurl` 真实 URL + 东方财富资讯搜索）、`backend/tools/fetch_auto_trend_data.py`（可重跑）、QA `backend/tools/qa_auto_trend.py`
+4. 简报 `briefs/auto-oil-vs-ev-brief.md`；文案 `storage/projects/auto-market-trend/story.json`
+
+### 验证
+- `tools/qa_auto_trend.py` **PASS**：70.72s / 1080×1920 / 音轨有 / 逐镜 RMS 0.120~0.167 / 亮度 0.860~0.890（无深色页）/ 峰值 0.770 / 最长静音 0.133s
+- Remotion `node run-tsc.js` 通过；渲染 rc=0（91s）
+- 抽帧 QA：26 张（12 镜镜尾 + 中段）人工过目，无越界/重叠/乱码；数字与 research.json 逐项对齐
+- BGM：复用系列曲 `vibe_we_never.mp3`（112.3BPM），口播自动闪避 0.62→0.33
+- 已知小瑕疵：steps 大标题采用「出血式」左贴边（x≈5px），属设计风格非裁切；如后续要严格 76px 边距可单改该镜
+
+### 环境备注
+- 制作期间（23:49）仓库发生引擎迁移更新（新增 `remotion-engine/` 与 `.agents/skills/`，AGENTS.md 指向新引擎）；
+  本条成片仍产出在既有 `remotion-life-sim` + `AutoTrendVibe` 组合（Root 已注册、渲染验证通过），
+  后续新片应改走 `video-producer` skill + `remotion-engine` gen 场景路径。
+
+## 2026-11-07 「视频流水线」栏目：每日凌晨驱动 DeepSeek Harness 自动出 3 条最热视频
+
+> 用户需求：新增一个栏目——根据每日热点新闻，凌晨自动生成 3 条最热视频；执行体不是
+> DeepSeek API，而是**驱动本地 DeepSeek Harness 桌面端（dsh）用 agent 能力做任务**。
+
+### dsh 无头自动化调研结论（本机实测）
+- 应用：`D:\Software\dsh-desktop\DeepSeek Harness.exe`（Electron 壳 44.7.0 + dsh runtime 0.2.1-rc.5，
+  内置 Node 24.21 / Python 3.12.14），用户数据 `~/.dsh/`
+- **官方无头入口**：`resources\runtime\cli\bin\dsh.cmd --profile headless --json -`（一次性任务模式，
+  任务书走 stdin，stdout 输出 NDJSON 事件流 session→status/text/tool_call/tool_result→final，
+  退出码 0=完成；`--session-id` 可续会话；出处：asar 内 `@deepseek-ai/dsh-headless` README）
+- 凭据：headless profile 默认不读 GUI 已存凭据 → 建 `~/.dsh/profiles/headless/cordis.patch.yml`
+  （恢复 credentials/authorization/deepseek-account 三行 + opencode-go 网关 + deepseek-v4.1-flash，
+  照抄用户 11-05 的 acp profile patch）
+- 探针验证通过：write/pwsh 工具真实可用（审批默认放行），NDJSON 事件流完整；偶发 429 过载重试即过
+
+### 架构
+后端只做「定时 → burst 选热点 → 派任务书 → 采集事件日志 → 验收成片 → 落记录」；
+创作全权交给 dsh agent（会话内按 AGENTS.md + video-producer skill 家族六阶段走完，
+确定性步骤调 backend/tools 的 tts_gen/premix_track/render_video；★模板相关性判定照规则执行）。
+
+### 代码
+| 文件 | 职责 |
+|---|---|
+| `backend/app/services/daily.py` | DailyPipelineService：守护线程调度（默认 03:30）· 选题去重（burst 前 40 → 排除平台/近 7 天已用）· `build_agent_prompt` 任务书 · dsh 会话 spawn（stdin+超时 taskkill 进程树+429 重试）· `verify_render` 验收 · runs/config/state 落 `storage/pipeline/` |
+| `backend/app/routers/pipeline.py` | `/api/pipeline` status/config(PUT)/run(POST)/runs/runs/{id}/log（NDJSON→可读日志投影） |
+| `backend/app/config.py` | `PIPELINE_DIR` + `DAILY_PIPELINE_*` / `DAILY_AGENT_*` 环境变量 |
+| `backend/tools/run_daily_pipeline.py` | CLI：`--dry-run`（只选题+任务书）/ `--run-now`（schtasks 兜底）/ `--status` |
+| `backend/tests/test_daily_pipeline.py` | 18 用例：调度时刻/去重/任务书/验收/批次隔离/互斥/5 路由（agent 会话全 fake） |
+| `frontend/src/components/DailyPipeline.tsx` | 新栏目「🎬 视频流水线」：状态卡（下次运行/启停/配置/立即生成）· 批次历史（封面卡片+播放+项目详情+实时日志）· 运行中 5s 轮询 |
+| `frontend/src/App.tsx` | ListTab 加 `pipeline`，顶栏红点（20s 轮询运行状态） |
+| `~/.dsh/profiles/headless/cordis.patch.yml` | dsh headless 凭据恢复 + 模型 patch（工作区外，一次性） |
+
+产物目录：`backend/storage/pipeline/{config.json,state.json,runs/,logs/}`；
+成片/项目落标准契约位置 `storage/renders/hot-YYYYMMDD-N/`、`storage/projects/hot-YYYYMMDD-N/`。
+
+### 验证
+- `pytest tests/ -q`：**303+19 passed**（含自愈/心跳用例）；前端 `tsc --noEmit` + `npm run build` 通过
+- dsh 探针：写文件 + pwsh 命令真实执行，exit 0
+- **端到端实测（2026-11-07 批次 20261107-125154，CLI 独立进程跑通）**：
+  - 选题「T1淘汰KC半决赛将战BLG」→ dsh 会话 62 分钟全流程自主完成：
+    web_search 核实事实 → script.json（8 镜）→ TTS 逐句 wav → BGM → plan.json → props →
+    preview.mp4 → QA 迭代重渲 → **final.mp4（9.4MB / 1498 帧 / 62.4s / 1080×1920@30）**
+  - ★模板相关性判定落库：`plan.json.template.mode="from_scratch"`（理由与复用清单规范）
+  - 交付验收 `verify_render` 通过，批次状态 done，标题「BLG的转折点，不是3比0」
+
+### 实测发现与修复（重要经验）
+1. **dsh 沙箱 ACL provisioning**：会话对 `remotion-engine/public/{bgm,voice}` 直接写入报
+   `PermissionError [Errno 13]`（该链缺 WRITE_DAC，沙箱无法下发授权）。用 dsh 自带的
+   `diagnose-windows-sandbox-acl` skill（脚本已复制到 `tmp/diagnose-windows-sandbox-acl.ps1`，
+   报告/回滚在 `tmp/acl-recovery/`）在沙箱外修复并验证。agent 偶发受限时按任务书第 9 条纪律
+   改走同机后端 API 执行确定性步骤（实测可行，产物仍落契约路径）。
+2. **防呆条款必要**：首次实跑 agent 因 BGM 生成失败加载 dsh 自带诊断 skill 钻进沙箱排查兔子洞
+   （探测 bitsadmin/junction/服务枚举），已人工 taskkill；任务书第 9/10 条（禁诊断沙箱 +
+   BGM 失败即改曲库选曲）后未再发生。
+3. **批次进程与后端生命周期解耦**：批次跑在 uvicorn 线程内时，launch.bat 端口清理重启后端会
+   连带杀死 dsh 子进程；改为心跳（60s 重写运行记录）+ 空闲自愈（running 且心跳 >5min 过期才收敛），
+   支持 CLI 独立进程跑批（`--run-now`，不占端口不受后端重启影响，schtasks 兜底推荐用此方式）。
+
+### 备注
+- 凌晨出片前提：后端进程与电脑保持运行（睡眠>2h 错过窗口则跳过本轮）；Windows 任务计划兜底命令见 CLI docstring
+- 单条实测 62 分钟（含调研+QA 迭代+重渲），3 条串行预算 2~3 小时；90 分钟/条超时兜底；网关 429 自动重试 3 次
+- ⚠ 批次运行中不要重启后端（launch.bat 端口清理会杀 dsh 子进程；已自愈为 failed 但该条作废）；
+  兜底可改用 `python -X utf8 backend/tools/run_daily_pipeline.py --run-now`（独立进程，不受影响）
+
+## 2026-11-07（下午）流水线 v2：主题定义 + 飞书候选确认 + 风格硬约束/亮度闸门
+
+> 用户三点反馈：① 要能定义主题；② 制作前把 10 条候选推飞书，默认做前 3，允许点选做哪几条；
+> ③ 调试片动效/背景没按账号要求来（数据准确/动效优美抓留存/竖屏抖音/不要深色 AI 味背景）。
+
+### 方案（用户已确认：群机器人 webhook + 20 分钟窗口 + 主题优先命中）
+- **两阶段流程**：`prepare_batch`（主题命中优先 + burst 选 10 条候选 → 落 `awaiting_confirm` 记录 →
+  推飞书卡片（默认前 N ⭐标注 + 截止时间 + 跳转本页按钮）→ 起倒计时线程）→
+  `confirm_batch`（API/前端勾选 1-based 序号 或 `use_default`；超时自动按默认开做）→ `_produce`。
+- **主题**：`config.themes=[{name,keywords}]`（UI 可增删）；命中标题/标签/摘要的热点优先入选，
+  主题名注入任务书 F 条（角度必须贴合方向）；前端配置面板可编辑。
+- **风格硬约束**：任务书新增【风格硬性要求】A~F 块（数据可溯源宁缺毋滥 / 浅色明亮背景禁深色 AI 味 /
+  动效层次+3 秒钩子+结尾互动 CTA / 1080×1920 抖音安全区 / preview 后亮度自检 / qa_report 自检），
+  另加可配置的 `style_prompt` 追加段（UI 可编辑）。
+- **亮度闸门**：`verify_render` 用 ffmpeg 抽 2 帧 + PIL 灰度均值，双双低于 `min_brightness`
+  （默认 0.45）判失败——深色成片会被硬拦下。
+- **并发修复**：`_save_run` 心跳/生产双线程写同一记录 → tmp 带线程 id + `os.replace` 退避重试
+  （Windows 并发 replace 互斥实测会 WinError 5）。
+- CLI：`--run-now`（完整两阶段，前台等待）/ `--immediate`（跳过窗口直接按默认，schtasks 推荐）。
+
+### 新 API
+`POST /api/pipeline/runs/{id}/confirm` `{indices:[1-based] | use_default:true}`；
+`status` 增 `awaiting_run_id`；config 增 `confirm_minutes/feishu_webhook/page_url/themes/style_prompt/min_brightness`。
+
+### 验证
+- `pytest tests/ -q`：**323 passed**（新增主题优先/两阶段确认/飞书卡片/亮度闸门/过期 awaiting 自愈等 26 项）
+- 前端 `tsc --noEmit` + build 通过；候选勾选器（默认勾前 N）+ 倒计时 + 主题/webhook/风格配置面板
+
+## 2026-11-08 凌晨 流程重排 v3：中午推送 → 确认排产 → 凌晨制作
+
+> 用户需求：① 每天 12:00 推送一次当日热点候选（按关注方向挑 10 条）；② 确认了才做、
+> 确认后排产到凌晨自动制作（或手动立即制作）；当晚 24:00 未确认则默认不做。
+
+- **调度改为分钟级 tick**：`_tick` 每分钟检查三个事件——推送（`push_hour/minute` 默认 12:00，
+  `state.last_push_date` 防重一天一次）/ 制作（`produce_hour/minute` 默认 03:30，把所有
+  `scheduled` 批次逐个生产）/ 过期收敛（昨天及更早仍 awaiting → skipped）。
+- **新增排产态**：`confirm_batch(schedule=True)` → `status=scheduled` + `produce_at`（下一次
+  制作时刻）；`POST /runs/{id}/produce`（`produce_now`）跳过等待立即制作；待确认卡片双按钮
+  「✓ 确认并排产」「▶ 立即制作」。已排产批次在列表里带「将于 MM-DD HH:MM 制作」+ 立即制作按钮。
+- **配置语义更新**：`push_hour/minute`、`produce_hour/minute`（旧 `hour/minute` 自动迁移为
+  制作时间）；`confirm_minutes/auto_confirm` 废弃不再使用。
+- 候选质量：方向搜索补齐（`theme_search_fill`）默认关（Bing 泛查询返回百科/官网，实测质量差），
+  方向内容以热点池命中为主；搜索结果加站点首页黑名单过滤。
+- 修复：`_extract_frame` 对损坏 mp4 会留下 ffmpeg 僵尸进程（subprocess 超时只杀 cmd.exe），
+  现仅接受快速失败路径 + 测试用伪产物不触 ffmpeg；`_save_run` 并发写退避重试保留。
+- 测试：27 用例（排产流/推送防重/tick 生产/过期收敛/亮度闸门/深链卡片/签名），全量 324 passed。
+- 用户已在页面配置 5 个方向（金融/科技/汽车/互联网/硬件），定时已重新启用。
+
+## 2026-11-08 远程访问：SSH 反向隧道把流水线暴露到公网服务器
+
+> 用户有可 SSH 的公网服务器，需要外地/手机查看流水线。生产链路（dsh agent/TTS/渲染）必须留在
+> 本地，因此采用「本地跑全套 + 服务器只做公网入口」的架构。
+
+- `frontend/vite.config.ts` 增加 `preview` 配置（dist 生产构建 + /api 代理，同 dev）。
+- 新增 `backend/tools/remote_tunnel.py`：
+  `python -X utf8 tools/remote_tunnel.py --server user@服务器IP --remote-port 8090`
+  流程 = npm build → 起 vite preview（:5173，已有服务则复用）→ `ssh -N -R 0.0.0.0:8090:127.0.0.1:5173`
+  （ServerAlive 保活 + 5s 断线重连，Ctrl+C 退出）。
+- 远程地址 `http://<服务器IP>:8090/?tab=pipeline`；飞书卡片链接（page_url）改成服务器地址即可全域可达。
+- 服务器侧注意：sshd 需允许外网绑定（`GatewayPorts clientspecified`）或用 nginx 反代
+  127.0.0.1:8090 并加 Basic Auth；页面可触发渲染/删除，公网裸奔有风险。
+- 本地链路已实测（preview 200 + /api 代理 + 隧道命令生成/重连循环）；隧道本身待用户以真实服务器验证。
+
+## 2026-11-08 完全自动化的四块拼图：事实硬闸门 / 视觉建议级验收 / 常驻看护 / 数据回流
+
+> 用户目标「完全自动化产出 AI 知识大赏视频」的四项缺口一次补齐（发布调度已有发布中心，暂缓）。
+> 决策：视觉验收=建议级提醒（不卡交付、控 token）；事实审计=硬闸门+最多 3 次返修；
+> 常驻=launch.bat 三窗口（后端/前端/watchdog）用户自主启动。
+
+- **事实审计硬闸门（新）**：`backend/tools/facts_audit.py`（确定性、零 LLM）——script.json 数字断言
+  （数值+单位，跳过「5 秒/20 字/1080px」类制作参数与 5G 型号）↔ research.json 节点+来源匹配，
+  放宽链：原文子串 → 裸数值（≥2位）→ 万/亿换算数值等值。daily 闸门 `verify_facts` **按最终
+  script+research 重算**（不信任落盘快照，伪造无效），unverifiable>0 派返修会话（带失败明细的
+  「返修任务书」），最多 `DAILY_FACTS_RETRIES=3` 次，耗尽 failed+飞书告警；非 facts 失败不重试。
+- **视觉验收建议级（新）**：`backend/tools/acceptance_frames.py` 有界抽帧——按 shot_timeline
+  （重构出 `build()` 供复用，CLI 输出不变）确定性选 ≤6 帧（片头中点+每镜中点+末帧，540×960 JPEG），
+  前 2 张镜内帧带抖音裁切模拟版（802×1920→402×960）。任务书第 12 条要求 agent 会话内 Read 一次
+  批量判定（一轮+一次复检硬上限），落 `renders/<pid>/acceptance.json`。`collect_advisory` 汇总
+  qa_report 机检 + 视觉自查进 run JSON（`video.qa/acceptance`）与飞书结果卡，**不拦截交付**。
+  token 成本 ≈3-8k/条（<整会话 2%）：机检免费挡废片、抽帧有硬上限、判定在已有会话内顺带做。
+- **任务书更新（build_agent_prompt）**：交付标准加 research.json/facts_audit/acceptance.json；
+  新增第 11 条（事实审计自检循环）与第 12 条（有界视觉自查）；支持 repair 返修块。
+- **常驻可靠性**：新增根目录 `watchdog.bat`（60s 探活 /api/health，挂了清 8000 并按同款命令拉起，
+  日志 backend/storage/logs/watchdog.log）；`launch.bat` 升三窗口并附可选 schtasks/唤醒注册注释。
+  飞书通知补全：制作结果卡（✅/❌+时长+facts 轮次+视觉建议摘要，`DAILY_NOTIFY_RESULTS` 可关）、
+  生产异常告警、中断批次自愈告警；统一推送入口 `_post_feishu`。顺手接活死配置
+  `DAILY_PIPELINE_HOUR/MINUTE`（→produce 默认）与 `CONFIRM_MINUTES`（→status 展示）。
+- **发布数据回流（搭在发布中心上）**：发布成功自动登记台账 `publish_stats.register_published`
+  （task_id 去重）；`creator_douyin.collect_stats` 用创作者中心会话抓「内容管理」页表现数据
+  （播放/点赞/收藏/评论/分享，万/w 换算，选择器集中+失败截图）；`publish_scheduler` 每日自动回填
+  （`PUBLISH_STATS_SYNC` 开关，浏览器与上传互斥）+ `POST /api/publish/stats/sync` 手动触发 +
+  `tools/publish_log.py sync` CLI；台账条目加 `task_id`/`plays/shares`，同条目一天一条。
+  未扫码登录时同步跳过（不阻塞）。
+- **qa_report/acceptance_frames ffmpeg 兜底**：PATH → Remotion 自带 `FFMPEG_BIN`（含 .exe 探测），
+  任何环境都能机检；shot_timeline 重构暴露 `build()`（输出逐字节不变）。
+- 冒烟实测：facts_audit 在 coldest-space-2026 抓出 4 个数字（3 verified / 1 unverifiable「2800亿」，
+  正是闸门要拦的）；acceptance_frames 出 6+2 帧可判读；qa_report 7/7 落拍 pass；
+  dry-run 任务书含第 11/12 条；后端重启后 /api/pipeline/status 返回 facts_retries=3、
+  /api/publish/stats/sync 与 douyin/status 正常。测试：test_facts_audit.py 6 用例 +
+  test_daily_pipeline.py 扩至 38（facts 重试环/返修任务书/视觉不拦截/结果卡），全量 360 passed。
+- 契约同步：pipeline-contracts.md 新增 §8（research/facts_audit/acceptance/publish_log schema），
+  §7 交付基线写明「事实=硬闸门、视觉=建议级」；video-production SKILL 第 6 步与 acceptance.md
+  加工具闸门节；video-producer SKILL 六阶段表 stage-6 产物更新。

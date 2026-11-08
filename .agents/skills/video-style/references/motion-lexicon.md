@@ -15,6 +15,10 @@
 
 intensity 0.6~1.6：平静 0.8~1.0、紧张 1.1~1.3、高潮 1.3~1.6。逐句运镜 cameraPerLine（长度=句数）用于多句镜的句间切机位。
 
+> **默认 safeScale=0.8 时（抖音竖屏预设）intensity 必须 ≤1.1**：运镜 transform 是 `scale(1 + k·e·a)`，
+> 默认画幅已把整镜缩到 0.8，再叠 1.3 的推镜会把贴边内容推出安全区（x<139/x>941 会被平台裁掉）。
+> 推荐：push ≤1.1、dolly_zoom ≤0.8、diag_in ≤0.75、pan/tilt ≤0.6~1.0、pull ≤0.9。
+
 ## transition（进本镜的转场，7 种）
 
 dissolve 柔和（**默认，首镜固定**）/ whip 甩镜（情绪突变）/ zoom 变焦模糊（悬念追问）/ flash 闪白（爆点一瞬）/ cut 硬切（冷峻纪实）/ glitch 故障错位（崩溃/系统/反转/数字失误）/ slide 推移（话题切换/章节感）。

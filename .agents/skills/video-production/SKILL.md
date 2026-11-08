@@ -28,8 +28,9 @@ cd backend && python tools/tts_gen.py --pid <pid> --script storage/projects/<pid
 按 `references/engine-contract.md` 的 schema 组 camelCase props，写到 `backend/storage/renders/<pid>/props.json`：
 - 逐句：`id`/`text`/`durationSec`（TTS 实测）/`audio`（`voice/projects/<pid>/<lid>.wav`）/`pauseAfter`（标点表）/`emphasis`（plan 的关键词过滤为台词子串，兜底用数字/引语）。
 - 逐镜：colors/image/scene/camera/enterTransition/grade/overlay/sfxMoment/atmosphere 来自 plan.json（映射规则见总入口 `pipeline-contracts.md` §6）。
-- 顶层：title/kicker/look/grainOpacity（各镜 grain 的均值）/bgm（有 BGM 时带 `beats` 数组）。
+- 顶层：title/kicker/look/grainOpacity（各镜 grain 的均值）/bgm（有 BGM 时带 `beats` 数组）/**`safeScale`（默认 0.8，抖音安全画幅；来自 `build_config.json` 的 `safe_scale`，缺省回落 `plan.json.safeScale`）**。
 - 首镜 `enterTransition` 固定 `dissolve`；from_scratch 项目 `scene` 只允许 null 或 `gen:<pid>:<NN>`、atmosphere 禁 `stars`。
+- 用 `build_props.py --project <pid>` 组装时，`build_config.json` 里写 `"safe_scale": 0.8`（默认预设，见 `references/platform-presets.md`）。
 
 ### 第 3 步 · 整轨预混（tts/custom 逐句音频时必须）
 
@@ -60,7 +61,19 @@ preview/final 之间**必须**等用户确认（避免整段废片）。预览�
 
 ### 第 6 步 · 验收
 
-对照 `references/acceptance.md` 清单自查，交付时报告：成片路径、时长、镜数、卡点情况、遗留问题。
+对照 `references/acceptance.md` 清单自查。**默认预设下必须加一步「平台裁切模拟」**：按抖音可见区（裁 x139~941 → 802×1920）抽 3~5 帧，确认片头/字幕/数字/印章无切字。交付时报告：成片路径、时长、镜数、卡点情况、safeScale、遗留问题。
+
+**事实审计（渲 final 前建议，无人值守流水线强制硬闸门）**：
+
+```bash
+cd backend && python -X utf8 tools/facts_audit.py \
+  --script storage/projects/<pid>/script.json \
+  --research storage/projects/<pid>/research.json --strict
+```
+
+出现 `unverifiable` 的数字：改 script 删掉/改定性表述，或把权威事实连同来源补进 research.json，重跑到 0 为止。daily 流水线会按最终 script+research **重算**复核（不过关自动派返修会话）。
+
+**视觉自查（建议级，严格控 token）**：渲完 final 后跑 `tools/acceptance_frames.py`（≤6 帧，540×960，前 2 张镜内帧带抖音裁切模拟版），Read 图片**一次批量判定**（字幕贴边/乱码/黑屏/构图/深色背景），能小修的改后重渲并只复检失败帧；结果落 `backend/storage/renders/<pid>/acceptance.json`（schema 见总入口 `pipeline-contracts.md` §8）。硬上限：一轮判定+一次复检，不逐帧反复看图。daily 流水线把该结果记录进飞书结果卡（不拦截交付）。
 
 ## 渲染失败排查顺序
 
@@ -73,4 +86,4 @@ preview/final 之间**必须**等用户确认（避免整段废片）。预览�
 
 - Python 工具在 `backend/` 下执行；npx 命令在 `remotion-engine/` 下执行。
 - 渲染超时默认 1800 秒；preview（300 帧）通常 1~3 分钟，整片视时长 5~20 分钟。
-- 引擎源码（`src/dv/*`）**不改**；只在 `src/gen/<pid>/` 增删场景并重写 registry。
+- 引擎源码（`src/dv/*`）默认不改（时间轴/布局数学冻结）；平台画幅适配已内置为 `props.safeScale` 参数，直接用，别改布局数学。确需改引擎时：timeline.ts 与 voice.py 时间轴常量必须同步 + `npx tsc --noEmit` 通过。

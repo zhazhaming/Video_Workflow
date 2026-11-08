@@ -102,16 +102,26 @@ remotion-engine/
     "atmosphere": { "kind": "none", "opacity": 0.5 }
   },
   "sfx": true,
-  "narrationAudio": { "src": "voice/projects/<pid>/track.wav", "volume": 1.0 }
+  "narrationAudio": { "src": "voice/projects/<pid>/track.wav", "volume": 1.0 },
+  "safeScale": 0.8
 }
 ```
+
+### 安全画幅（safeScale，2026-11 新增 · **抖音竖屏默认 0.8**）
+
+抖音等平台全屏播放 9:16 视频时会按 **cover** 放大，左右各裁掉约 13%（1080 宽约 139px/侧），贴边内容会被切。
+`props.safeScale`（0.6~1，缺省 1 = 旧行为）把整镜内容（背景/图形/字幕/镜标签/片头）缩到中央，外圈铺同色系渐变：
+被平台裁掉的正好是边框，内容不丢。**默认预设取 0.8**（内容安全区 x 185~895 / y 300~1460），运镜 `camIntensity ≤1.1`。
+
+来源优先级：`build_config.json` 的 `safe_scale` → `plan.json` 顶层 `safeScale` → 1。
+`build_props.py` 写入 `props.safeScale`；引擎侧见 `src/dv/DataVideo.tsx`。完整预设见 `platform-presets.md`。
 
 ### 枚举与取值范围（模型输出必须清洗到这些值内）
 
 | 字段 | 允许值 |
 |---|---|
 | `camera`（11 种） | push 缓推/强调、pull 缓拉/抽离、pan_left、pan_right 横摇/并列、tilt_up、tilt_down 上下摇/压迫、diag_in、diag_out 斜推/动感、dolly_zoom 滑动变焦/眩晕、handheld 手持/纪实、still 静止/沉重 |
-| `camIntensity` | 0.6~1.6（平静 0.8~1.0、紧张 1.1~1.3、高潮 1.3~1.6） |
+| `camIntensity` | 0.6~1.6（平静 0.8~1.0、紧张 1.1~1.3、高潮 1.3~1.6）；**safeScale<1 时 ≤1.1**（平台安全画幅，缩放会把贴边内容推出去） |
 | `enterTransition`（7 种） | dissolve 柔和(默认/首镜)、whip 甩镜/情绪突变、zoom 变焦/悬念、flash 闪白/爆点、cut 硬切/冷峻、glitch 故障/崩溃反转、slide 推移/章节 |
 | `grade` | contrast 0.9~1.25、saturate 0.7~1.4、brightness 0.9~1.1、tintOpacity 0~0.4（低谷 saturate 低 tint 高，高潮反之） |
 | `overlay.kind`（6 种） | counter 数字(配 value/label/unit)、typewriter 打字机(≤18字)、chat 气泡(side/name/text)、stat 状态条(label/from/to/unit)、toast 告警(tone: error\|info\|success)、terminal 终端(≤4行)；全片 20%~40% 镜头有即可，相邻镜不重复 |
@@ -145,6 +155,7 @@ remotion-engine/
 {
   "template": { "mode": "from_scratch|reuse", "reason": "≤60字", "reusable": ["通用运镜词表"] },
   "look": { "...同 props.look..." },
+  "safeScale": 0.8,
   "kicker": "...", "pacing": "节奏曲线一句话",
   "shots": [
     { "hash": "可选，缓存用", "plan": { "camera": "push", "intensity": 1.0, "transition": "dissolve",
@@ -155,9 +166,56 @@ remotion-engine/
 ```
 
 组装 props 时把 `plan.shots[i].plan` 映射进 `RenderShot`（`intensity→camIntensity`、`transition→enterTransition`、`grain→顶层 grainOpacity 平均值`），并过滤 `emphasis` 为该句台词子串。
+**`plan.safeScale` 默认 0.8**（抖音竖屏安全画幅，见 §4 与 `platform-presets.md`）；`camIntensity` 同步 ≤1.1。
 
 ## 7. 交付与验收基线
 
-- 成片：`backend/storage/renders/<pid>/final.mp4`（1080×1920@30fps，h264）。
+- 成片：`backend/storage/renders/<pid>/final.mp4`（1080×1920@30fps，h264，默认带 `safeScale: 0.8` 安全画幅）。
 - 先渲 `preview.mp4`（前 10 秒）过目，确认后才渲整片。
 - 渲完自查：字幕无出框/重叠/过小；年份文案正确；切镜卡拍（±1~2 帧）；人声与字幕同步（≤2 帧）。
+- **平台裁切模拟**：`crop=802:1920:139:0` 抽帧，确认片头/字幕/数字/印章无切字（抖音 20:9 机型/预览页会裁掉左右约 139px/侧）。
+- **事实审计（硬闸门，无人值守流水线强制）**：`tools/facts_audit.py` 重算 script.json 数字 ↔ research.json 来源，unverifiable>0 不过关（daily 流水线自动派返修会话，最多 `DAILY_FACTS_RETRIES=3` 次）。交互式制作也建议渲 final 前跑一次。
+- **视觉自查（建议级，不拦截交付）**：`tools/acceptance_frames.py` 有界抽帧 ≤6 张（540×960，前 2 张镜内帧带抖音裁切模拟版），agent 会话内 Read 一次判定并落 `acceptance.json`；结果只记录/提醒，不卡交付。
+
+## 8. 验收与回流产物 schema
+
+**research.json**（事实底座，`backend/storage/projects/<pid>/`；选题/文案阶段产物）：
+
+```json
+{"topic": "主题",
+ "nodes": [{"year": "年份/时期", "title": "谁、做了什么", "what": "具体经过",
+            "why": "为什么重要", "sources": [{"title": "来源标题", "url": "来源链接"}]}]}
+```
+
+**facts_audit.json**（`tools/facts_audit.py` 产出；daily 闸门按当前 script+research **重算**，手改快照无效）：
+
+```json
+{"generated_at": "...", "script_hash": "sha1(script.json 原始字节)",
+ "research_topic": "...",
+ "items": [{"line_id": "s01_0", "text": "台词前 40 字", "value": "1.08%",
+            "status": "verified|unverifiable", "source_url": "..."}],
+ "summary": {"total": 0, "verified": 0, "unverifiable": 0}}
+```
+
+**acceptance.json**（`backend/storage/renders/<pid>/`；agent 视觉自查落盘，建议级）：
+
+```json
+{"verdict": "pass|warn|fail",
+ "frames": [{"file": ".../acceptance/f01.jpg", "t": 1.1, "kind": "title|shot|end",
+             "crop_file": "（可选）裁切模拟版路径", "ok": true, "issues": []}],
+ "notes": "...", "video_size": 0, "duration_seconds": 0}
+```
+
+**publish_log.json**（发布台账，`backend/storage/`；与 `tools/publish_log.py` CLI 共用）：
+
+```json
+{"entries": [{"id": "hex8", "pid": "...", "platform": "douyin", "url": "", "title": "",
+              "note": "", "task_id": "发布中心任务 id（自动登记去重键）",
+              "published_at": "...",
+              "stats": [{"at": "...", "plays": 0, "likes": 0, "collects": 0,
+                         "comments": 0, "shares": 0, "source": "creator|manual"}]}]}
+```
+
+自动回流：发布中心任务发布成功 → 自动登记（`publish_stats.register_published`）；
+每日一次 / `POST /api/publish/stats/sync` / `tools/publish_log.py sync` →
+创作者中心「内容管理」页抓表现数据按标题回填（同一台账条目一天最多一条）。

@@ -50,6 +50,27 @@ export interface ModelInfo {
   is_default: boolean;
 }
 
+/** 模型 API 配置（/api/models/config，设置弹窗编辑用） */
+export interface ModelConfig {
+  id: string;
+  name: string;
+  base_url: string;
+  api_key: string;
+  model: string;
+  default: boolean;
+  /** 附加请求头（如 opencode Go 的 x-opencode-session） */
+  extra_headers: Record<string, string>;
+  available: boolean;
+}
+
+/** 连通性测试结果（/api/models/test） */
+export interface ModelTestResult {
+  ok: boolean;
+  latency_ms: number;
+  reply?: string;
+  error?: string;
+}
+
 export interface PromptTemplate {
   id: string;
   name: string;
@@ -168,6 +189,8 @@ export interface BriefingItem {
 export interface BriefingSectionItem extends BriefingItem {
   url?: string;
   summary?: string;
+  /** 仓库描述的中文介绍（AI 解读缓存，可能为空——空则回退英文 summary） */
+  summary_cn?: string;
   language?: string;
   stars?: string;
   audience?: string[];
@@ -333,6 +356,21 @@ export interface SceneImages {
   custom_file: string | null;
   downloaded: boolean;
   error?: string;
+  /** AI 生图（ComfyUI）：中文提示词 / 英文译文 / 单幕错误 */
+  prompt_cn?: string;
+  prompt_en_ai?: string;
+  ai_error?: string;
+}
+
+/** ComfyUI 服务状态（/api/comfy/status） */
+export interface ComfyStatus {
+  reachable: boolean;
+  reason?: string;
+  url?: string;
+  gpu?: string;
+  version?: string;
+  checkpoints?: string[];
+  checkpoint?: string;
 }
 
 /** 步骤 4：风格提案（look 为渲染端样式参数，前端仅展示文字） */
@@ -381,6 +419,8 @@ export interface PublishPackage {
   has_video: boolean;
   video_url: string | null;
   cover_url: string | null;
+  cover_v_url?: string | null;
+  cover_h_url?: string | null;
   copies: { douyin?: PublishCopy; xhs?: PublishCopy };
   upload_pages: { douyin: string; xhs: string };
 }
@@ -388,6 +428,79 @@ export interface PublishPackage {
 export interface DouyinStatus {
   configured: boolean;
   authorized: boolean;
+}
+
+// ---------- 发布中心（创作者中心自动化：扫码登录 + 预约发布） ----------
+export type PublishTaskStatus =
+  | "scheduled"
+  | "uploading"
+  | "published"
+  | "failed"
+  | "overdue"
+  | "cancelled";
+
+export interface PublishTask {
+  id: string;
+  pid: string;
+  platform: string;
+  title: string;
+  desc: string;
+  tags: string[];
+  collection: string;
+  declarations: string[];
+  scheduled_at: string;
+  status: PublishTaskStatus;
+  created_at: string;
+  published_at: string;
+  item_id: string;
+  error: string;
+  warnings: string[];
+  attempts: number;
+  last_message: string;
+  source_task_id: string;
+  history: { at: string; action: string; note: string }[];
+  project_title?: string;
+}
+
+export interface PublishAccount {
+  logged_in: boolean;
+  message: string;
+  saved_at?: number;
+  age_days?: number;
+}
+
+export interface PublishCenterOverview {
+  account: PublishAccount;
+  tasks: PublishTask[];
+  defaults: { collection: string; declarations: string[] };
+}
+
+export interface PublishTaskCreateInput {
+  pid: string;
+  title: string;
+  /** "YYYY-MM-DD HH:MM:SS"；空 = 立即发布 */
+  scheduled_at?: string | null;
+  desc?: string;
+  tags?: string[];
+  /** null = 用全局默认；"" = 不设合集 */
+  collection?: string | null;
+  declarations?: string[] | null;
+}
+
+export interface PublishTaskUpdateInput {
+  title?: string;
+  desc?: string;
+  tags?: string[];
+  collection?: string;
+  declarations?: string[];
+  scheduled_at?: string;
+}
+
+export type PublishTaskAction = "publish-now" | "retry" | "cancel" | "republish";
+
+export interface CreatorLoginPoll {
+  state: "idle" | "waiting" | "success" | "expired" | "ok" | "already_logged_in";
+  message?: string;
 }
 
 // ---------- 热门歌曲（抖音热歌 / 音乐榜单聚合） ----------
@@ -444,4 +557,157 @@ export interface MusicChartStatus {
   board_count: number;
   song_count: number;
   boards_ok: number;
+}
+
+// ---- 视频流水线（每日热点自动出片）----
+
+export interface PipelineTheme {
+  name: string;
+  keywords: string[];
+}
+
+export interface PipelineCandidate {
+  title: string;
+  platform: string;
+  platform_name: string;
+  tag: string;
+  summary: string;
+  hot: number;
+  burst: number;
+  url: string;
+  theme_name: string;
+}
+
+export interface PipelineConfirmInfo {
+  indices: number[];
+  source: "user" | "default";
+  at: string;
+}
+
+export interface PipelineVideo {
+  index: number;
+  pid: string;
+  topic_title: string;
+  platform: string;
+  hot: number;
+  burst: number;
+  theme_name?: string;
+  status: "pending" | "running" | "done" | "failed";
+  started_at: string | null;
+  finished_at: string | null;
+  exit_code: number | null;
+  title: string | null;
+  duration_seconds: number | null;
+  final_text: string;
+  error: string;
+  log: string;
+  /** 后端注入：成片是否已存在 */
+  has_video?: boolean;
+}
+
+export interface PipelineRun {
+  id: string;
+  trigger: "auto" | "manual";
+  started_at: string;
+  finished_at: string | null;
+  status: "awaiting_confirm" | "scheduled" | "running" | "done" | "partial" | "failed" | "skipped";
+  target_seconds: number;
+  /** 候选确认（awaiting_confirm 阶段有效） */
+  count?: number;
+  candidates?: PipelineCandidate[];
+  default_plan?: number[];
+  confirm_deadline?: string;
+  /** 已排产：预计制作时刻 */
+  produce_at?: string;
+  notify?: { ok: boolean; error: string };
+  confirmed?: PipelineConfirmInfo | null;
+  error?: string;
+  videos: PipelineVideo[];
+}
+
+export interface PipelineStatus extends Record<string, unknown> {
+  enabled: boolean;
+  hour: number;
+  minute: number;
+  count: number;
+  target_seconds: number;
+  exclude_platforms: string[];
+  agent_cmd: string;
+  agent_profile: string;
+  agent_timeout: number;
+  agent_available: boolean;
+  running: boolean;
+  awaiting_run_id: string | null;
+  current_run_id: string | null;
+  /** v3：中午推送 / 凌晨排产制作 */
+  push_hour: number;
+  push_minute: number;
+  produce_hour: number;
+  produce_minute: number;
+  next_push_at: string;
+  next_produce_at: string;
+  last_run: {
+    id: string;
+    trigger: string;
+    status: string;
+    started_at: string | null;
+    finished_at: string | null;
+    done: number;
+    total: number;
+  } | null;
+  next_run_at: string;
+  feishu_webhook: string;
+  feishu_secret: string;
+  page_url: string;
+  themes: PipelineTheme[];
+  style_prompt: string;
+  min_brightness: number;
+}
+
+export interface PipelineConfigUpdate {
+  enabled?: boolean;
+  hour?: number;
+  minute?: number;
+  count?: number;
+  target_seconds?: number;
+  exclude_platforms?: string[];
+  agent_cmd?: string;
+  agent_profile?: string;
+  agent_timeout?: number;
+  push_hour?: number;
+  push_minute?: number;
+  produce_hour?: number;
+  produce_minute?: number;
+  theme_search_fill?: boolean;
+  feishu_webhook?: string;
+  feishu_secret?: string;
+  page_url?: string;
+  themes?: PipelineTheme[];
+  style_prompt?: string;
+  min_brightness?: number;
+}
+
+// ---- 视频流水线 v2：主题 / 候选确认 / 飞书 ----
+
+export interface PipelineTheme {
+  name: string;
+  keywords: string[];
+}
+
+export interface PipelineCandidate {
+  title: string;
+  platform: string;
+  platform_name: string;
+  tag: string;
+  summary: string;
+  hot: number;
+  burst: number;
+  url: string;
+  theme_name: string;
+}
+
+export interface PipelineConfirmInfo {
+  indices: number[];
+  source: "user" | "default";
+  at: string;
 }

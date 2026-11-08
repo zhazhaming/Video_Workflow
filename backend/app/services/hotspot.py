@@ -917,6 +917,7 @@ class HotspotService:
                     "title": i.title,
                     "url": i.url or f"https://github.com/{i.title}",
                     "summary": i.summary,
+                    "summary_cn": str(m.get("intro") or ""),
                     "language": i.tag,
                     "stars": i.raw_hot,
                     "burst": i.burst,
@@ -924,7 +925,8 @@ class HotspotService:
                     "audience": m.get("audience") or guess_audience(i.summary, i.tag),
                     "use": str(m.get("use") or ""),
                     "why": str(m.get("why") or ""),
-                    "ai_done": bool(m.get("use")),
+                    # intro 缺失（老缓存/未解读）视为未完成，下次解读会补上中文介绍
+                    "ai_done": bool(m.get("use") and m.get("intro")),
                 }
             )
         src_ok = any(
@@ -964,6 +966,7 @@ class HotspotService:
                 "audience": audience or ["全员通用"],
                 "use": str(r.get("use") or "").strip()[:80],
                 "why": str(r.get("why") or "").strip()[:80],
+                "intro": str(r.get("intro") or "").strip()[:120],
                 "at": now_s,
             }
             added += 1

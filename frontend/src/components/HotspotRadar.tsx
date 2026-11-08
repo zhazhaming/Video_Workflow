@@ -17,6 +17,7 @@ import {
   listTopics,
   updateDirection,
   updateTopic,
+  withToken,
 } from "../api";
 import type {
   AiTopic,
@@ -581,6 +582,23 @@ export const HotspotRadar = ({
 
   const toolsAllDone =
     !!brief?.tools?.items.length && brief.tools.items.every((t) => t.ai_done);
+
+  // 进入工具 tab 且还有未解读的仓库时，自动跑一次 AI 中文介绍（后端按仓库缓存，
+  // 每仓库只花一次 token；每次会话只自动尝试一次，失败静默——按钮仍可手动重试）
+  const toolsAutoTried = useRef(false);
+  useEffect(() => {
+    if (briefTab !== "tools" || toolsAutoTried.current || briefAiBusy) return;
+    if (!brief?.tools?.items.length || toolsAllDone || !aiModel) return;
+    toolsAutoTried.current = true;
+    setBriefAiBusy(true);
+    aiTools(aiModel)
+      .then((r) => setBrief((prev) => (prev ? { ...prev, tools: r.tools ?? prev.tools } : prev)))
+      .catch(() => {
+        /* 自动解读失败不报错打扰，手动点「AI 解读」可重试 */
+      })
+      .finally(() => setBriefAiBusy(false));
+  }, [briefTab, brief, aiModel, toolsAllDone, briefAiBusy]);
+
   const aiBtnLabel =
     briefTab === "tools"
       ? toolsAllDone
@@ -630,7 +648,7 @@ export const HotspotRadar = ({
               }}
               title={
                 briefTab === "tools"
-                  ? "AI 给每个仓库标注职场受众/用途/提效点"
+                  ? "AI 给每个仓库生成中文介绍并标注职场受众/用途/提效点"
                   : "AI 逐条给出适合形式/拍摄角度/风险提示"
               }
             >
@@ -814,7 +832,14 @@ export const HotspotRadar = ({
                               {selected.has(t.id) ? "已选 ✓" : "＋ 选题"}
                             </button>
                           </div>
-                          {t.summary && <div className="brief-reason">{t.summary}</div>}
+                          {t.summary_cn ? (
+                            <>
+                              <div className="brief-reason">{t.summary_cn}</div>
+                              {t.summary && <div className="brief-en" title="GitHub 原始描述">{t.summary}</div>}
+                            </>
+                          ) : (
+                            t.summary && <div className="brief-reason">{t.summary}</div>
+                          )}
                           {t.use && (
                             <div className="brief-ai">
                               <span>🧰 {t.use}</span>
@@ -890,7 +915,7 @@ export const HotspotRadar = ({
         <button className="btn primary" disabled={refreshing} onClick={doRefresh}>
           {refreshing ? "抓取中..." : "🔄 立即抓取"}
         </button>
-        <a className="btn" href="/api/hotspot/export.csv" download title="当前全部热点导出为 CSV（Excel 可直接打开）">
+        <a className="btn" href={withToken("/api/hotspot/export.csv")} download title="当前全部热点导出为 CSV（Excel 可直接打开）">
           ⬇ 导出 CSV
         </a>
       </div>

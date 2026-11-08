@@ -1,0 +1,17 @@
+{
+  "topic": "MoneyPrinterTurbo：一句话生成短视频的开源流水线（Vibe 知识大赏 · 工具科普）",
+  "pid": "moneyprinterturbo-vibe",
+  "created": "2026-11-05",
+  "template": {
+    "mode": "from_scratch",
+    "reason": "选题是「AI 短视频生产工具」的科普与实测，与模板库内置的行星/宇宙/地球演化场景域（solar/nebula/accretion/impact/moonform/ocean/volcano/ice/meteor/life/city）完全无关。按 AGENTS.md 规则从零设计画面与动效，禁止注入 dv/* 场景、星空氛围、旧占位图，也不使用紫蓝渐变/荧光青霓虹。",
+    "reusable": [
+      "基础设施（非创意元素）：Remotion 宿主工程 remotion-life-sim、Root.tsx 注册方式（与 vibe-agent / gold-race 同级新增独立 composition）",
+      "基础设施：backend/app/services/voice.py 的 edge-tts 逐镜配音 + 静音裁剪 + loudnorm，backend/app/services/beat.py 的 BPM/拍点分析",
+      "设计系统（非模板场景）：.commandcode/skills/vibe-design-system 的竖屏 1080×1920 版式与动效语法；src/vibe-agent/fx.tsx 的通用原语（PageShell/CaptionBar/Chrome/KineticTitle/TerminalCard/InfoCard）",
+      "音频资产：public/bgm/vibe_we_never.mp3（抖音「vibe 知识大赏」同款 BGM，90.04s / 112.3 BPM；站内发布遵循平台音乐授权范围）",
+      "无版权音效基建：public/sfx/{impact,riser,whoosh}.wav（本片按需使用）"
+    ],
+    "clean_check": "成片不出现行星/太阳系/星空/星云/陨石等模板元素；画面为深色舞台 + 金色/珊瑚/薄荷/天蓝四色、手机竖屏 UI 卡、流水线节点、终端与素材网格，全部为本片原创设计。"
+  }
+}

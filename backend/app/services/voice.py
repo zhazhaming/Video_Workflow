@@ -579,7 +579,10 @@ def mix_line_track(project_id: str, props: dict) -> dict:
             snapped = later if later is not None else raw
         starts.append(snapped)
 
-    total_s = offset + sum(sc["dur_s"] for sc in scenes) + 1.0
+    # 轨长必须按“吸附后的最后一镜起点”算（与 timeline.ts 的 offset+body+1.0 一致）。
+    # 用 Σ(dur_s) 会漏掉切镜节拍吸附累计出的间隔，最后一句配音会被缓冲区截断。
+    body_end = starts[-1] + scenes[-1]["dur_s"] if scenes else 0.0
+    total_s = offset + body_end + 1.0
     buf = np.zeros(int(total_s * _TRACK_SR) + _TRACK_SR, dtype=np.float64)
     vdir = _voice_dir(project_id)
     schedule = []

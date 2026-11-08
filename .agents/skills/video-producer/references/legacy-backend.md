@@ -23,6 +23,10 @@
 - 旧流程建的项目：`storage/projects/<pid>/script.json` 直接可被 skill 流程的配音/制作阶段使用。
 - skill 流程产出的 `script.json` / `props.json`：旧前端详情页与渲染接口同样能读（script.json 形状即 ScriptDraft；props.json 需放在 `storage/renders/<pid>/` 供旧渲染接口使用）。
 - 旧流程独有产物：`research.json`（带出处知识节点）、`styles.json`、`review.json`、`director.json`（v2 分镜+缓存）、`prompt_pack.md`（from_scratch 提示词包）。skill 流程的对应物为 `research.json`（可选）、`plan.json`。
+- **默认画幅（2026-11 起两条路径一致）**：抖音竖屏安全画幅 `safeScale 0.8`。
+  - 旧流程：`pipeline.assemble_props` 默认 `plan.safeScale ?? 0.8`（plan 写 `"safeScale": 1` 可退回满屏）；风格提案样图 `flow.py` 同样 0.8。
+  - skill 流程：`build_config.json` 的 `safe_scale` → 缺省回落 `plan.json.safeScale`，`build_props.py` 写入 `props.safeScale`。
+  - 运镜 `camIntensity` 默认预设下 ≤1.1；详见 `platform-presets.md`。
 
 ## 服务层复用地图（写新工具时从这里包装，不复制逻辑）
 

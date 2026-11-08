@@ -28,8 +28,13 @@ def overlap_for(k):
     return OVERLAP.get(k, 16)
 
 
-def main(path):
-    props = json.load(open(path, encoding="utf-8"))
+def build(props):
+    """计算每镜全局秒区间（与 DataVideo.tsx buildTimeline 对齐）。
+
+    返回 (shots, offset_sec, end_sec)：
+    shots = [{"start","end","mid","kind"}]（含片头 offset 的全局秒）；
+    end_sec ≈ 最后一镜结束 + 尾部停留（video_end 参考值）。
+    """
     shots = props["shots"]
     beats = (props.get("bgm") or {}).get("beats") or []
 
@@ -87,15 +92,29 @@ def main(path):
         else:
             durs.append(max(content_end + 0.12, starts[i + 1] - starts[i] + overlap_for(enters[i + 1]) / FPS))
 
+    out = []
     total = None
-    print(f"offset={offset/FPS:.2f}s  total_shots={n}")
     for i in range(n):
         frm = offset + round(starts[i] * FPS)
         dur = round(durs[i] * FPS)
         kind = (shots[i].get("scene") or {}).get("kind")
-        print(f"shot{i+1:02d}  [{frm/FPS:7.2f} ~ {(frm+dur)/FPS:7.2f}]s  mid={(frm+dur/2)/FPS:6.2f}  scene={kind}")
+        out.append({
+            "start": frm / FPS,
+            "end": (frm + dur) / FPS,
+            "mid": (frm + dur / 2) / FPS,
+            "kind": kind,
+        })
         total = frm + dur
-    print(f"video_end~{(total + END_HOLD)/FPS:.2f}s")
+    return out, offset / FPS, (total + END_HOLD) / FPS
+
+
+def main(path):
+    props = json.load(open(path, encoding="utf-8"))
+    shots, offset, end = build(props)
+    print(f"offset={offset:.2f}s  total_shots={len(shots)}")
+    for i, s in enumerate(shots):
+        print(f"shot{i+1:02d}  [{s['start']:7.2f} ~ {s['end']:7.2f}]s  mid={s['mid']:6.2f}  scene={s['kind']}")
+    print(f"video_end~{end:.2f}s")
 
 
 if __name__ == "__main__":

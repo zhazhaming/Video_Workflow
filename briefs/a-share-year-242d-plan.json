@@ -1,0 +1,16 @@
+{
+  "topic": "A股这一年：242 个交易日逐日复盘（2025-11-03 至 2026-11-02）",
+  "pid": "ashare-year-242d",
+  "created": "2026-11-03",
+  "template": {
+    "mode": "from_scratch",
+    "reason": "选题为 A 股日级行情数据可视化（逐日行军曲线 + 事件卡点），与模板库内置的行星/宇宙/地球演化场景域（solar/nebula/accretion/ocean/volcano/ice/meteor/life/city 等）完全无关；按 AGENTS.md 规则从零设计，禁止注入 dv/* 的 scene、运镜/转场/字幕/调色/颗粒词表与星空氛围，不复用任何旧占位图。",
+    "reusable": [
+      "基础设施（非创意元素）：Remotion 宿主工程 remotion-life-sim 与 MotionShow 组合（与 e28e30a04e57《A股 vs 美股 20 年》同模式，market 版式新增 march/hook/recap 三个自绘模式，不动模板场景词表）",
+      "基础设施：通用纸感设计令牌（paper preset）与动效原语（revealUp/maskWipe/ip）",
+      "基础设施：public/sfx/{impact,riser,whoosh}.wav 程序化无版权音效、gold_race_bgm.mp3 无版权合成曲基底（120.2 BPM）",
+      "基础设施：backend/tools/make_market_bgm.py 的重音烘焙思路（本片另写专用生成器，逐事件卡 0.5s 节拍网格）"
+    ],
+    "clean_check": "成片不出现行星/太阳系/星空/星云等元素；画面为暖白纸感行情图 + 事件卡 + 红涨绿跌日级动效，全部为本片原创设计。"
+  }
+}

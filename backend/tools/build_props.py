@@ -82,6 +82,7 @@ def main() -> int:
     windows = {int(k): tuple(v) for k, v in (cfg.get("windows") or {}).items()}
     sweep_shot = int(cfg.get("sweep_shot", 1))
     bgm_events_cfg = cfg.get("bgm_events") or []
+    safe_scale = cfg.get("safe_scale", plan.get("safeScale"))  # 抖音安全画幅：config 优先，缺省回落 plan.safeScale
     plan_shots = [it.get("plan") or {} for it in plan.get("shots", [])]
 
     beats_grid = [round(k * (60.0 / bpm), 4) for k in range(600)]
@@ -178,6 +179,7 @@ def main() -> int:
         "bgm": {"src": f"bgm/{cfg.get('bgm_out', pid + '_bgm')}.mp3", "volume": cfg.get("bgm_volume", 0.72),
                 "bpm": bpm, "beats": beats_grid[: int(total / (60.0 / bpm)) + 16]},
         "look": plan["look"],
+        "safeScale": safe_scale,
         "sceneStarts": [round(offset + sm["start"], 3) for sm in scenes_meta],
         "sfx": bool(cfg.get("sfx", True)),
     }

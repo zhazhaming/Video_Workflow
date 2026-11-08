@@ -214,6 +214,36 @@ def approve_images(pid: str):
     return {"gates": flow.approve_gate(pid, "images")["gates"]}
 
 
+# ---------- 第 3 步补充：ComfyUI AI 生图 ----------
+
+
+class AiImagesIn(BaseModel):
+    model_id: str | None = None
+    scenes: list[int] | None = None  # 空=全部幕
+
+
+@router.post("/images/ai")
+def start_ai_images(pid: str, req: AiImagesIn):
+    _gate(pid, "copy")
+    return _start_task(
+        pid,
+        "images_ai",
+        lambda update: flow.run_ai_images(pid, req.model_id, update, req.scenes),
+    )
+
+
+@router.get("/images/ai/{name}")
+def ai_candidate_file(pid: str, name: str):
+    """AI 生成的候选原图（前端缩略图/选用前预览）。"""
+    _load_meta(pid)
+    if "/" in name or "\\" in name or ".." in name or not name.endswith(".png"):
+        raise HTTPException(400, "非法文件名")
+    path = flow.ai_candidate_dir(pid) / name
+    if not path.exists():
+        raise HTTPException(404, "候选图不存在（可能已重新生成）")
+    return FileResponse(path, media_type="image/png", filename=name)
+
+
 # ---------- 第 4 步：定样式 + 分镜 ----------
 
 @router.get("/styles")

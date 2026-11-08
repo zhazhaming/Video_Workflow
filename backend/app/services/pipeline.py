@@ -153,6 +153,7 @@ def assemble_props(
     prefer_images: bool = False,
     with_line_audio: bool = True,
     market: Optional[MarketData] = None,
+    safe_scale: Optional[float] = None,
 ) -> RenderProps:
     """durations: {line_id: 秒}；image_rels: 与 shots 对齐的 public 相对路径（可为 None）。
 
@@ -242,6 +243,8 @@ def assemble_props(
         grain_opacity=grain_opacity,
         look=_look_spec(plan_dict),
         kicker=str(plan_dict.get("kicker") or "") or None,
+        # 抖音竖屏安全画幅（平台全屏会裁左右 ~13%）；由调用方传默认 0.8，plan.safeScale 可覆盖，1=满屏
+        safe_scale=safe_scale if safe_scale is not None else plan_dict.get("safeScale"),
         market=market,
     )
 

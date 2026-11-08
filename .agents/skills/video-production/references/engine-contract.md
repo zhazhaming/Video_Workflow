@@ -24,7 +24,7 @@ DataVideo 布局：`offset = max(2.0, snap((introFrames-15)/30, beats, 0.45))`�
 ## 3. props.json 字段速查（camelCase；完整 schema 见总入口 pipeline-contracts.md §4）
 
 - 顶层：`title`、`shots[]`、`bgm{src,volume,bpm,beats[]}`、`titleCard`、`grainOpacity`(0~0.12)、
-  `look{}`、`kicker`、`sfx`、`narrationAudio{src,volume}`。
+  `look{}`、`kicker`、`sfx`、`narrationAudio{src,volume}`、`safeScale`(0.6~1，缺省 1；抖音全屏 cover 裁左右 ~13% 时用 0.78~0.84 把内容缩进安全区)。
 - 镜：`year/label/colors[2]/image/tail(0.6)/durationSec(卡点镜长下限)/camera/camIntensity(0.6~1.6)/
   enterTransition/cameraPerLine/grade{contrast,saturate,brightness,tintOpacity}/overlay/sfxMoment/
   atmosphere{kind,opacity}/scene{kind,palette,accent,speed}`。

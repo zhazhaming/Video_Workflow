@@ -20,6 +20,32 @@ def run(args):
     return subprocess.run(args, capture_output=True, text=True)
 
 
+def _resolve_bin(name: str) -> str:
+    """PATH → Remotion 自带 ffmpeg 目录兜底（保证机检在任何环境都能跑）。"""
+    import shutil
+
+    p = shutil.which(name)
+    if p:
+        return p
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from app.config import FFMPEG_BIN  # noqa: PLC0415
+
+        base = Path(FFMPEG_BIN).parent
+        for cand in (base / name, base / f"{name}.exe"):
+            if cand.exists():
+                return str(cand)
+        if name == "ffmpeg" and Path(FFMPEG_BIN).exists():
+            return str(FFMPEG_BIN)
+    except Exception:  # noqa: BLE001
+        pass
+    return name
+
+
+FFMPEG = _resolve_bin("ffmpeg")
+FFPROBE = _resolve_bin("ffprobe")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--video", required=True)
@@ -30,7 +56,7 @@ def main() -> int:
     video = Path(args.video)
     issues, report = [], {}
 
-    probe = json.loads(run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(video)]).stdout)
+    probe = json.loads(run([FFPROBE, "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(video)]).stdout)
     v = next(s for s in probe["streams"] if s["codec_type"] == "video")
     a = next(s for s in probe["streams"] if s["codec_type"] == "audio")
     dur = float(probe["format"]["duration"])
@@ -40,25 +66,25 @@ def main() -> int:
         issues.append(f"时长 {dur:.1f}s 偏离估算 {args.est_seconds}s 超 ±10%")
 
     # 黑帧（可跳过）与场景切换
-    bd = run(["ffmpeg", "-v", "info", "-i", str(video), "-vf", "blackdetect=d=0.2:pix_th=0.03", "-f", "null", "-"]).stderr
+    bd = run([FFMPEG, "-v", "info", "-i", str(video), "-vf", "blackdetect=d=0.2:pix_th=0.03", "-f", "null", "-"]).stderr
     black = re.findall(r"black_start:([\d.]+).*black_end:([\d.]+)", bd)
     black_total = sum(float(e) - float(s) for s, e in black)
     report["black_frames"] = {"segments": len(black), "total_s": round(black_total, 2)}
     if black_total > 1.0:
         issues.append(f"黑帧累计 {black_total:.2f}s（>1s）")
 
-    sc = run(["ffmpeg", "-v", "error", "-i", str(video), "-vf", "select='gt(scene,0.15)',showinfo", "-f", "null", "-"]).stderr
+    sc = run([FFMPEG, "-v", "error", "-i", str(video), "-vf", "select='gt(scene,0.15)',showinfo", "-f", "null", "-"]).stderr
     cut_times = [round(float(x), 3) for x in re.findall(r"pts_time:([\d.]+)", sc)]
     report["hard_cuts"] = len(cut_times)
     report["actual_cuts"] = cut_times[:20]
 
     # 静音段与响度
-    vd = run(["ffmpeg", "-i", str(video), "-af", "silencedetect=n=-45dB:d=0.6", "-f", "null", "-"]).stderr
+    vd = run([FFMPEG, "-i", str(video), "-af", "silencedetect=n=-45dB:d=0.6", "-f", "null", "-"]).stderr
     sils = re.findall(r"silence_duration: ([\d.]+)", vd)
     report["silence_over_0.6s"] = len(sils)
     if len(sils) > 6:
         issues.append(f"≥0.6s 静音段 {len(sils)} 个（人声/音乐可能断流）")
-    vd2 = run(["ffmpeg", "-i", str(video), "-af", "volumedetect", "-f", "null", "-"]).stderr
+    vd2 = run([FFMPEG, "-i", str(video), "-af", "volumedetect", "-f", "null", "-"]).stderr
     m = re.search(r"mean_volume: (-?[\d.]+) dB", vd2)
     mx = re.search(r"max_volume: (-?[\d.]+) dB", vd2)
     if m:
