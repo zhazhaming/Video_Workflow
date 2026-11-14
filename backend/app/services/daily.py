@@ -35,7 +35,9 @@ from ..config import (
     DAILY_AGENT_CMD,
     DAILY_AGENT_PROFILE,
     DAILY_AGENT_TIMEOUT,
+    DAILY_AI_COLUMN_QUOTA,
     DAILY_FACTS_RETRIES,
+    DAILY_HOTSPOT_QUOTA,
     DAILY_NOTIFY_RESULTS,
     DAILY_PIPELINE_CONFIRM_MINUTES,
     DAILY_PIPELINE_COUNT,
@@ -135,21 +137,9 @@ def next_run_at(hour: int, minute: int, now: datetime | None = None) -> datetime
     return target
 
 
-def build_agent_prompt(pid: str, brief: dict, target_seconds: int = 60,
-                       theme: dict | None = None, style_prompt: str = "",
-                       repair: dict | None = None) -> str:
-    """派给 dsh 会话的任务书：热选题 + 硬性契约 + 风格硬约束 + 收尾标记。
-
-    repair 非空时为「事实审计返修」任务书：附带上一轮失败明细与修复指令（前置在收尾前）。
-    """
+def _hot_topic_lines(brief: dict) -> list[str]:
+    """热点选题的题面（原有行为，保持字段顺序不变）。"""
     lines = [
-        "你是 video-workflow 工作区的自动化视频制作 agent。今天是 "
-        + date.today().isoformat()
-        + "，请独立完成一条竖屏短视频的全部制作。",
-        "",
-        "【第一步（必须）】先读工作区根目录的 AGENTS.md 与 .agents/skills/video-producer/SKILL.md，"
-        "严格按其中的流程、目录契约与产物 schema 制作（需要时再读对应阶段 skill）。",
-        "",
         "【今日选题（按第一波流量潜力选出）】",
         f"- 热点标题：{brief.get('title', '')}",
         f"- 来源平台：{brief.get('platform_name') or brief.get('platform', '')}"
@@ -161,13 +151,91 @@ def build_agent_prompt(pid: str, brief: dict, target_seconds: int = 60,
         lines.append(f"- 摘要：{brief['summary']}")
     if brief.get("theme_name"):
         lines.append(f"- 命中主题：{brief['theme_name']}")
+    if brief.get("column"):
+        lines.append(f"- 所属栏目：{brief['column']}（只讲这个栏目该讲的东西，不跑题）")
+    if brief.get("opening_number"):
+        lines.append(
+            f"- 开场数字（写进第一句）：{brief['opening_number']}"
+            "（第一句给这个数字，第二句给反差，第三句给代价；前 5 秒不许自我介绍）"
+        )
+    else:
+        lines.append(
+            "- 开场数字：未取到 → 你必须先找到一个可核实的数字再写第一句；"
+            "找不到就换角度，不许用「今天我们来聊聊」开场。"
+        )
+    return lines
+
+
+def _company_topic_lines(brief: dict) -> list[str]:
+    """「每日一家公司」选题的题面：公司档案 + 初稿提纲 + 系列约束。"""
+    c = brief.get("company") or {}
+    draft = brief.get("draft") or {}
+    lines = [
+        "【今日选题（每日一家公司系列）】",
+        f"- 公司：{c.get('name', '')}（{c.get('name_en', '')}）",
+        f"- 国家/地区：{c.get('country', '')}｜总部：{c.get('hq', '')}｜行业：{c.get('sector', '')}",
+        f"- 成立：{c.get('founded', '')} 年｜创始人：{c.get('founder', '')}",
+        f"- 一句话：{c.get('one_liner', '')}",
+    ]
+    if brief.get("series_date"):
+        lines.append(f"- 系列排期：{brief['series_date']}（固定栏目，片头必须带「每日一家公司」标识）")
+    lines += [
+        "- 开场硬规则（每一期都必须遵守）：0–5 秒 = 数字 → 反差 → 代价；前 5 秒禁止自我介绍、"
+        "「本期/今天」、栏目名。「每日一家公司」标识放画面字幕，不占口播开场。",
+        "- 结构硬规则：45~60 秒；3 台阶 × 15 秒（起家 / 关键转折 / 靠什么赚钱），每台阶结论先行；"
+        "第 10 秒前必须交付第一个完整价值。全片不写固定开场白/结束语，不出现「我是阿扎」。",
+    ]
+    lines.append("- 内容初稿（提纲级，可优化；但事实必须逐条核验，不得照抄未经核实的数字）：")
+    if draft.get("title"):
+        lines.append(f"  标题参考：{draft['title']}")
+    for b in (draft.get("beats") or [])[:8]:
+        if not isinstance(b, dict):
+            continue
+        lines.append(f"  · {b.get('label', '')}（{b.get('sec', '')}）：{b.get('text', '')}")
+    if draft.get("cta"):
+        lines.append(f"  · 结尾互动：{draft['cta']}")
+    if draft.get("notes"):
+        lines.append(f"  · 备注：{draft['notes']}")
+    lines += [
+        "- 系列定位：45~60 秒一家公司一期；讲清「靠什么起家 / 关键转折 / 靠什么赚钱」，",
+        "  不做财报朗读、不堆年份；开场用具体数字 + 反差做钩子，结尾留一句互动提问。",
+        "- 公司介绍与渲染引擎内置领域模板无关：按 AGENTS.md ★ 规则一律 from_scratch，"
+        "禁止注入行星/宇宙等无关动效；公司信息（成立年份/创始人/总部/关键事件/数字）"
+        "必须逐条查证并落 research.json。",
+    ]
+    return lines
+
+
+def build_agent_prompt(pid: str, brief: dict, target_seconds: int = 60,
+                       theme: dict | None = None, style_prompt: str = "",
+                       repair: dict | None = None) -> str:
+    """派给 dsh 会话的任务书：热选题/公司选题 + 硬性契约 + 风格硬约束 + 收尾标记。
+
+    repair 非空时为「事实审计返修」任务书：附带上一轮失败明细与修复指令（前置在收尾前）。
+    """
+    lines = [
+        "你是 video-workflow 工作区的自动化视频制作 agent。今天是 "
+        + date.today().isoformat()
+        + "，请独立完成一条竖屏短视频的全部制作。",
+        "",
+        "【第一步（必须）】先读工作区根目录的 AGENTS.md 与 .agents/skills/video-producer/SKILL.md，"
+        "严格按其中的流程、目录契约与产物 schema 制作（需要时再读对应阶段 skill）。",
+        "",
+    ]
+    if brief.get("source") == "company":
+        lines += _company_topic_lines(brief)
+    else:
+        lines += _hot_topic_lines(brief)
     lines += [
         "",
         "【硬性要求（逐条遵守）】",
         f"1. 本条视频的项目 pid 固定为 {pid}，全程不得更改（所有产物目录都以它命名）。",
         "2. 按 skill 六阶段走完整流程：选题细化（标题/角度/钩子）→ 文案 script.json → BGM →"
         " 配音 TTS → 风格 plan.json（含模板相关性判定）→ 渲染成片 → 自检。",
-        f"3. 口播文案每句 ≤20 字，成片时长约 {target_seconds} 秒。",
+        f"3. 口播文案每句 ≤20 字，成片时长约 {target_seconds} 秒；开场 0–5 秒必须「数字 → 反差 → 代价」，"
+        "前 5 秒禁止自我介绍/「本期/今天/大家好」/栏目名；落盘后必须跑 "
+        "`python -X utf8 backend/tools/check_opening.py --script backend/storage/projects/" + pid + "/script.json`，"
+        "退出码为 0 才能继续（不通过就回改首镜，不要改选题）。",
         "4. 模板相关性判定（AGENTS.md ★ 规则）必须执行，结论落 plan.json 的 template 字段；"
         "热点时事类选题一律按「无关 → from_scratch」处理，禁止注入行星/宇宙等领域动效。",
         "5. 夜间无人值守：不要编写 gen 场景（remotion-engine/src/gen/），画面用渲染引擎内置排版/渐变；"
@@ -659,11 +727,14 @@ class DailyPipelineService:
 
     def _pick_candidates(self, count: int, exclude_platforms: list[str], themes: list[dict],
                          theme_search_fill: bool = False) -> list[dict]:
-        """候选 = 热点池方向命中 → （可选）方向网络搜索补齐 → 全站热度兜底，共 count 条。
+        """候选 = 热点池方向命中 → （可选）方向网络搜索补齐 → 全站热度兜底。
 
-        定义了方向时，热点池里命中的排最前；theme_search_fill=True 才会用 Bing
-        搜索补齐方向候选（实验性，质量不稳）；没定义方向则纯按第一波指数。
+        两道闸门（2026-11-13）：
+        1. 栏目闸门：每条必须先归到「ai干活 / 公司大赏」，命中黑名单或归不进的直接丢弃；
+        2. 配额闸门：每天最多 DAILY_HOTSPOT_QUOTA 条热点，其中至少 DAILY_AI_COLUMN_QUOTA 条来自 ai干活。
+        热点只是原料，不能让泛资讯选题把账号标签冲散。
         """
+        cap = max(1, min(count, DAILY_HOTSPOT_QUOTA))
         hs = hotspot.service
         items = hs.get_items(sort="burst", limit=60)
         if not items:
@@ -675,7 +746,14 @@ class DailyPipelineService:
         excl = {p.strip().lower() for p in exclude_platforms if p.strip()}
         used = self._load_state().get("used", {})
 
+        def _column(it) -> tuple[str, str, str]:
+            return hotspot.classify_column(it.title, it.summary or "")
+
+        def _ok(it) -> bool:
+            return _column(it)[0] != hotspot.COLUMN_REJECT
+
         def _brief(it, theme_name: str = "") -> dict:
+            column, opening_number, reject_reason = _column(it)
             return {
                 "title": it.title,
                 "platform": it.platform,
@@ -687,6 +765,9 @@ class DailyPipelineService:
                 "url": it.url,
                 "theme_name": theme_name,
                 "source": "hot",
+                "column": column,
+                "opening_number": opening_number,
+                "reject_reason": reject_reason,
             }
 
         picked: list[dict] = []
@@ -702,22 +783,22 @@ class DailyPipelineService:
             if not kws:
                 continue
             for it in items:
-                if len(picked) >= count:
+                if len(picked) >= cap:
                     break
-                if not _usable(it.title) or it.platform.lower() in excl:
+                if not _usable(it.title) or it.platform.lower() in excl or not _ok(it):
                     continue
                 hay = f"{it.title} {it.tag or ''} {it.summary or ''}".lower()
                 if any(k in hay for k in kws):
                     picked.append(_brief(it, theme.get("name") or ""))
                     seen.add(hotspot.normalize_title(it.title))
-            if len(picked) >= count:
-                return picked
+            if len(picked) >= cap:
+                break
 
         # 2) 方向网络搜索补齐（实验性，默认关）：泛方向查询返回的多是百科/官网
         active_themes = [t for t in (themes or []) if (t.get("name") or t.get("keywords"))]
-        if theme_search_fill and active_themes and len(picked) < count:
+        if theme_search_fill and active_themes and len(picked) < cap:
             for theme in active_themes:
-                if len(picked) >= count:
+                if len(picked) >= cap:
                     break
                 name = theme.get("name") or ""
                 kws = [k for k in (theme.get("keywords") or []) if k][:2]
@@ -728,7 +809,7 @@ class DailyPipelineService:
                     print(f"[daily] 方向搜索失败（{query}）: {e}", flush=True)
                     continue
                 for res in results:
-                    if len(picked) >= count:
+                    if len(picked) >= cap:
                         break
                     title = str(res.get("title") or "").strip()
                     if (
@@ -737,6 +818,11 @@ class DailyPipelineService:
                         or any(h in title for h in _SEARCH_SITE_HINTS)
                         or not _usable(title)
                     ):
+                        continue
+                    column, opening_number, reject_reason = hotspot.classify_column(
+                        title, str(res.get("snippet") or "")
+                    )
+                    if column == hotspot.COLUMN_REJECT:
                         continue
                     picked.append({
                         "title": title[:120],
@@ -749,17 +835,46 @@ class DailyPipelineService:
                         "url": str(res.get("url") or ""),
                         "theme_name": name,
                         "source": "search",
+                        "column": column,
+                        "opening_number": opening_number,
+                        "reject_reason": reject_reason,
                     })
                     seen.add(hotspot.normalize_title(title))
 
         # 3) 全站热度兜底（仅当仍有缺口）
         for it in items:
-            if len(picked) >= count:
+            if len(picked) >= cap:
                 break
-            if not _usable(it.title) or it.platform.lower() in excl:
+            if not _usable(it.title) or it.platform.lower() in excl or not _ok(it):
                 continue
             picked.append(_brief(it))
             seen.add(hotspot.normalize_title(it.title))
+
+        # 4) 栏目配额：保证至少 N 条 ai干活（不足时用热点池里的 ai 条目顶上非 ai 的末位）
+        need = DAILY_AI_COLUMN_QUOTA - sum(1 for c in picked if c.get("column") == hotspot.COLUMN_AI)
+        if need > 0:
+            for it in items:
+                if need <= 0:
+                    break
+                column, _, _ = _column(it)
+                if column != hotspot.COLUMN_AI:
+                    continue
+                key = hotspot.normalize_title(it.title)
+                if key in seen or key in used:
+                    continue
+                candidate = _brief(it)
+                slot = next(
+                    (i for i in range(len(picked) - 1, -1, -1)
+                     if picked[i].get("column") != hotspot.COLUMN_AI),
+                    None,
+                )
+                if slot is None:
+                    picked.append(candidate)
+                else:
+                    picked[slot] = candidate
+                seen.add(key)
+                need -= 1
+
         return picked
 
     def _load_state(self) -> dict:
@@ -785,10 +900,10 @@ class DailyPipelineService:
         state["used"] = {k: v for k, v in used.items() if str(v) >= cutoff}
         self._save_state(state)
 
-    def _allocate_pid(self, taken: set[str] | None = None) -> str:
+    def _allocate_pid(self, taken: set[str] | None = None, prefix: str = "hot") -> str:
         """分配本批次可用的 pid；taken 为批内已分配集合（前一条失败未落盘也能错开）。"""
         taken = taken or set()
-        base = "hot-" + date.today().strftime("%Y%m%d")
+        base = f"{prefix}-" + date.today().strftime("%Y%m%d")
         for i in range(1, 21):
             pid = f"{base}-{i}"
             if pid in taken:
@@ -858,6 +973,74 @@ class DailyPipelineService:
             except OSError:
                 pass
             self._stop.wait(60)
+
+    # ---------- 公司系列：直接排产（无需候选确认） ----------
+
+    def enqueue_company(self, entry: dict, company: dict, now: bool = False) -> dict:
+        """把一条「每日一家公司」档期排进流水线。
+
+        与热点批次共用同一套制作/审计/验收/日志能力，但跳过「推送候选 → 勾选确认」：
+        公司是用户自己选的，直接生成一个 kind=company 的已排产批次。
+        默认排到下一个凌晨制作时间；now=True 立即制作。
+        """
+        if now and self._run_lock.locked():
+            raise RuntimeError("流水线正在制作中，暂时无法立即制作")
+        for old in self.list_runs(100):
+            if old.get("kind") == "company" and old.get("status") in ("scheduled", "running"):
+                day = old.get("company_date") or old.get("id")
+                raise RuntimeError(f"已有公司期数在排产/制作中（{day}），先完成它再排下一期")
+        cfg = self.get_config()
+        draft = entry.get("draft") or {}
+        day = str(entry.get("date") or "")
+        name = str(company.get("name") or "")
+        title = str(draft.get("title") or company.get("one_liner") or name)
+        brief = {
+            "title": title if title.startswith(name) else f"{name}：{title}",
+            "platform": "company",
+            "platform_name": "每日公司",
+            "tag": str(company.get("sector") or ""),
+            "summary": str(company.get("one_liner") or ""),
+            "hot": 0,
+            "burst": 0,
+            "url": "",
+            "theme_name": "每日一家公司",
+            "source": "company",
+            "pid_prefix": "co",
+            "company": company,
+            "draft": draft,
+            "series_date": day,
+        }
+        base = datetime.now().strftime("%Y%m%d-%H%M%S")
+        run_id = f"{base}-c"
+        for n in range(2, 20):
+            if not (PIPELINE_RUNS_DIR / f"{run_id}.json").exists():
+                break
+            run_id = f"{base}-c{n}"
+        produce_at = next_run_at(int(cfg["produce_hour"]), int(cfg["produce_minute"]))
+        now_stamp = now_iso()
+        run: dict = {
+            "id": run_id,
+            "trigger": "manual",
+            "kind": "company",
+            "company_date": day,
+            "started_at": now_stamp,
+            "finished_at": None,
+            "status": "scheduled",
+            "target_seconds": int(cfg["target_seconds"]),
+            "count": 1,
+            "candidates": [brief],
+            "confirm_deadline": "",
+            "produce_at": now_stamp if now else produce_at.isoformat(timespec="seconds"),
+            "notify": {"ok": False, "error": "公司期数由档期板手动选定，不走候选推送"},
+            "confirmed": {"indices": [1], "source": "user", "at": now_stamp},
+            "videos": [],
+        }
+        self._save_run(run)
+        self._last_run = self._run_summary(run)
+        if now:
+            self._begin_production(run, [brief])
+            return self.get_run(run_id) or run
+        return run
 
     # ---------- 阶段 2：确认排产 / 立即制作 ----------
 
@@ -968,7 +1151,7 @@ class DailyPipelineService:
         try:
             allocated: set[str] = set()
             for i, brief in enumerate(topics, 1):
-                pid = self._allocate_pid(allocated)
+                pid = self._allocate_pid(allocated, prefix=str(brief.get("pid_prefix") or "hot"))
                 allocated.add(pid)
                 video: dict = {
                     "index": i,

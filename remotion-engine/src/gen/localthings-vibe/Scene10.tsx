@@ -3,10 +3,10 @@ import React, { useMemo } from "react";
 import { AbsoluteFill } from "remotion";
 import type { GenSceneProps } from "../types";
 import { FONT_STACK, mixHex, rand } from "../../dv/atmosphere";
-import { INK, LINE, PAPER, SHADOW, clamp01, easeOut, exitFade } from "./ui";
+import { INK, LINE, PAPER, SHADOW, clamp01, easeBack, easeOut, exitFade } from "./ui";
 
 const Scene10: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
-  // 26 颗数据粒子：从屋外随机位落回屋内档案位
+  // 26 颗数据粒子：从屋外沿弧线落回屋内档案位
   const bits = useMemo(
     () =>
       Array.from({ length: 26 }, (_, k) => {
@@ -15,6 +15,8 @@ const Scene10: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
         return {
           x0: 540 + Math.cos(ang) * r,
           y0: 850 + Math.sin(ang) * r * 1.15,
+          cx: 540 + Math.cos(ang) * r * 0.45 + (rand(seed + k * 7 + 8) - 0.5) * 240,
+          cy: 850 + Math.sin(ang) * r * 0.5 - 140,
           d: rand(seed + k * 7 + 5) * 0.35, // 归巢延迟
           sq: rand(seed + k * 7 + 6) > 0.5,
         };
@@ -24,6 +26,8 @@ const Scene10: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
   const houseIn = easeOut(clamp01(p / 0.13));
   // 屋内档案卡堆（随粒子归巢逐渐叠高）
   const filed = clamp01((p - 0.3) / 0.45);
+  const winGlow = clamp01((p - 0.6) / 0.25); // 归档完成后窗灯亮
+  const flag = easeBack(clamp01((p - 0.66) / 0.22)); // 屋顶升旗（价值达成感）
 
   return (
     <AbsoluteFill style={{ background: `linear-gradient(165deg, ${c1} 0%, ${c2} 100%)`, fontFamily: FONT_STACK, overflow: "hidden" }}>
@@ -62,14 +66,34 @@ const Scene10: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
               background: PAPER, border: `4px solid ${INK}`, borderRadius: "0 0 26px 26px",
               boxShadow: SHADOW, boxSizing: "border-box", overflow: "hidden",
             }}
-          />
-          {/* 烟囱（安心小细节） */}
+          >
+            {/* 窗灯（归档完成后亮起，位于房身上部两角） */}
+            <div style={{ position: "absolute", left: 34, top: 26, width: 90, height: 84, borderRadius: 12, background: accent, opacity: 0.15 + winGlow * 0.7, border: `3px solid ${INK}`, boxSizing: "border-box" }} />
+            <div style={{ position: "absolute", right: 34, top: 26, width: 90, height: 84, borderRadius: 12, background: accent, opacity: 0.15 + winGlow * 0.7, border: `3px solid ${INK}`, boxSizing: "border-box" }} />
+          </div>
+        {/* 烟囱（安心小细节） */}
+        <div
+          style={{
+            position: "absolute", left: 430, top: 40, width: 44, height: 90,
+            background: PAPER, border: `4px solid ${INK}`, borderRadius: 8, boxSizing: "border-box",
+          }}
+        />
+        {/* 屋顶升旗（数据归档完成） */}
+        <div
+          style={{
+            position: "absolute", left: 150, top: -46 - flag * 10, width: 8, height: 54 + flag * 10,
+            background: INK, borderRadius: 4, transformOrigin: "bottom center",
+          }}
+        >
           <div
             style={{
-              position: "absolute", left: 430, top: 40, width: 44, height: 90,
-              background: PAPER, border: `4px solid ${INK}`, borderRadius: 8, boxSizing: "border-box",
+              position: "absolute", left: 8, top: 0, width: 66, height: 44,
+              background: accent, borderRadius: "4px 10px 10px 4px",
+              opacity: flag, transformOrigin: "left center",
+              transform: `scaleX(${flag})`,
             }}
           />
+        </div>
         </div>
         {/* 屋内档案卡堆（从下往上叠） */}
         {Array.from({ length: 4 }, (_, i) => {
@@ -78,7 +102,7 @@ const Scene10: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
             <div
               key={i}
               style={{
-                position: "absolute", left: 540 - 150 + i * 4, top: 880 - i * 52,
+                position: "absolute", left: 540 - 150 + i * 4, top: 985 - i * 50,
                 width: 300, height: 44, borderRadius: 10,
                 background: i === 3 ? accent : mixHex(accent, PAPER, 0.5),
                 border: `3px solid ${INK}`, boxSizing: "border-box",
@@ -91,11 +115,12 @@ const Scene10: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
             </div>
           );
         })}
-        {/* 数据粒子归巢 */}
+        {/* 数据粒子沿弧线归巢 */}
         {bits.map((b, k) => {
           const t = easeOut(clamp01((p - 0.12 - b.d) / 0.42));
-          const x = b.x0 + (540 - 90 - b.x0) * t;
-          const y = b.y0 + (860 - b.y0) * t;
+          // 二次贝塞尔：起点 → 弧顶控制点 → 屋内
+          const x = (1 - t) * (1 - t) * b.x0 + 2 * (1 - t) * t * b.cx + t * t * (540 - 90);
+          const y = (1 - t) * (1 - t) * b.y0 + 2 * (1 - t) * t * b.cy + t * t * 860;
           return (
             <div
               key={k}

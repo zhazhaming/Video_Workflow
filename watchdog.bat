@@ -1,7 +1,10 @@
 @echo off
 title Video Workflow Watchdog
-REM 后端看护：每 60s 探活 /api/health，挂了就清残留进程并按 launch.bat 同款命令拉起。
-REM 日志：backend\storage\logs\watchdog.log（含每次重启记录）
+REM Backend watchdog: probes /api/health every 60s; on failure it cleans port
+REM 8000 and relaunches the backend the same way launch.bat does.
+REM Log: backend\storage\logs\watchdog.log (records every restart)
+REM NOTE: System32 is spelled out for timeout.exe so a dev-shell PATH (Git Bash
+REM / MSYS2 puts GNU coreutils timeout.exe ahead of System32) cannot shadow it.
 cd /d "%~dp0"
 set "LOG=%~dp0backend\storage\logs\watchdog.log"
 if not exist "%~dp0backend\storage\logs" mkdir "%~dp0backend\storage\logs"
@@ -18,5 +21,5 @@ if errorlevel 1 (
   cd /d "%~dp0"
   echo [%date% %time%] backend restart issued >> "%LOG%"
 )
-timeout /t 60 /nobreak >nul
+%SystemRoot%\System32\timeout.exe /t 60 /nobreak >nul
 goto loop

@@ -237,6 +237,9 @@ export interface AiTopic {
   hook: string;
   why?: string;
   ref?: string;
+  column?: string;
+  opening_number?: string;
+  reject_reason?: string;
 }
 
 /** 落库的选题（今日选题工作台） */
@@ -252,6 +255,9 @@ export interface SavedTopic {
   status: "todo" | "doing" | "done" | "dropped";
   project_id: string;
   note: string;
+  column?: string;
+  opening_number?: string;
+  reject_reason?: string;
 }
 
 export const STAGE_LABEL: Record<string, string> = {
@@ -559,6 +565,69 @@ export interface MusicChartStatus {
   boards_ok: number;
 }
 
+// ---- 每日一家公司（系列档期板）----
+
+export interface CompanyProfile {
+  id: string;
+  name: string;
+  name_en: string;
+  country: string;
+  region: "国内" | "海外";
+  track: string;
+  sector: string;
+  founded: number;
+  founder: string;
+  hq: string;
+  one_liner: string;
+  hook: string;
+  tags: string[];
+}
+
+export interface CompanyDraftBeat {
+  label: string;
+  sec: string;
+  text: string;
+}
+
+export interface CompanyDraft {
+  title: string;
+  angle: string;
+  beats: CompanyDraftBeat[];
+  cta: string;
+  notes: string;
+}
+
+export interface CompanyPlanEntry {
+  date: string;
+  weekday: string;
+  is_today: boolean;
+  status: "empty" | "planned" | "scheduled" | "producing" | "done" | "partial" | "failed";
+  status_label: string;
+  company: CompanyProfile | null;
+  draft: CompanyDraft | null;
+  suggestion?: CompanyProfile | null;
+  run_id: string | null;
+  run_status: string | null;
+  pid: string | null;
+  produce_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface CompanyPlan {
+  today: string;
+  days: number;
+  entries: CompanyPlanEntry[];
+}
+
+export interface CompanyPool {
+  companies: CompanyProfile[];
+  tracks: string[];
+  countries: string[];
+  updated_at: string;
+  count: number;
+}
+
 // ---- 视频流水线（每日热点自动出片）----
 
 export interface PipelineTheme {
@@ -576,6 +645,9 @@ export interface PipelineCandidate {
   burst: number;
   url: string;
   theme_name: string;
+  column?: string;
+  opening_number?: string;
+  reject_reason?: string;
 }
 
 export interface PipelineConfirmInfo {
@@ -608,6 +680,9 @@ export interface PipelineVideo {
 export interface PipelineRun {
   id: string;
   trigger: "auto" | "manual";
+  /** company = 每日一家公司档期批次（用户选定，无需候选确认） */
+  kind?: "company" | string;
+  company_date?: string;
   started_at: string;
   finished_at: string | null;
   status: "awaiting_confirm" | "scheduled" | "running" | "done" | "partial" | "failed" | "skipped";
@@ -704,6 +779,9 @@ export interface PipelineCandidate {
   burst: number;
   url: string;
   theme_name: string;
+  column?: string;
+  opening_number?: string;
+  reject_reason?: string;
 }
 
 export interface PipelineConfirmInfo {

@@ -101,10 +101,10 @@ export const DVTitleCard: React.FC<{
               position: "absolute",
               left: `${x}%`,
               top: `${y}%`,
-              width: 420,
-              height: 420,
+              width: 360,
+              height: 360,
               borderRadius: "50%",
-              background: `radial-gradient(circle, ${accent}${Math.round(30 + pul * 26).toString(16)} 0%, transparent 68%)`,
+              background: `radial-gradient(circle, ${accent}${Math.round(18 + pul * 14).toString(16)} 0%, transparent 68%)`,
               filter: "blur(8px)",
             }}
           />
@@ -118,10 +118,10 @@ export const DVTitleCard: React.FC<{
           left: `${sweep}%`,
           top: 0,
           bottom: 0,
-          width: 90,
-          background: `linear-gradient(90deg, transparent, ${accent}2e, transparent)`,
-          filter: "blur(14px)",
-          transform: "skewX(-12deg)",
+          width: 46,
+          background: `linear-gradient(90deg, transparent, ${accent}1f, transparent)`,
+          filter: "blur(18px)",
+          transform: "skewX(-10deg)",
         }}
       />
 

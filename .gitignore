@@ -52,3 +52,19 @@ _com_test.ps1
 # BGM 运行时/外部抓取音频（基线自制曲目已入库保持不变；新增曲目可再生或涉版权，不入库）
 remotion-engine/public/bgm/*.mp3
 remotion-engine/public/bgm/*.beats.json
+
+# —— 2026-11-14 补充：本地私密与一次性产物（不入库）——
+# 根目录环境变量（惯例承载密钥；当前为 D 盘 TMP 重定向，属本机配置）
+/.env
+# 音色试听音频样本（运行时生成/外部抓取的音频）
+voice_samples/
+remotion-engine/public/voice-samples/
+# 调试探针与临时脚本残留
+_probe_root_shell.txt
+backend/premix_err.txt
+backend/tmp_write_durations.py
+backend/tools/_tmp_patch_registry.py
+# Windows NUL 设备误生成的占位文件
+/nul
+# public 下下划线开头的临时调试页
+remotion-engine/public/_*.html

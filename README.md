@@ -151,6 +151,28 @@ python -m pytest tests -q
 探测工具：`python backend/tools/probe_hot_sources.py`（检测各平台接口当前可用性，
 接入新平台前先跑它）。
 
+## 每日一家公司（系列排产）
+
+「业务流水线」页第二条轨道（`视频流水线 → 🏢 每日公司`，深链
+`/?tab=pipeline&track=company`）：每天一期，先选公司，再改初稿，最后排产。
+
+- **候选库**：35 家国内外知名公司（`backend/app/services/company_pool.json`），带赛道、
+  国家、成立年份、创始人、总部、钩子和六段式初稿素材；支持按国内/海外、赛道、关键词筛选
+- **档期板**：未来 7 天，一天一期；空档会自动推荐一家最近没用过的公司
+- **内容初稿**：按「钩子 / 起点 / 转折 / 生意 / 记忆点 / CTA」生成，可逐段编辑；
+  初稿只是提纲，正式口播稿在制作期核验事实后重写（每句 ≤20 字）
+- **排产**：点「排产」生成一个 `kind=company` 的流水线批次，到凌晨制作时间自动出片；
+  也可「立即制作」。制作复用现有的 dsh agent 全流程 + 事实审计 + 视觉验收，
+  成片与日志在「🔥 热点流水线」历史批次里查看
+- **一天一期**：同一时间只允许一条公司期数处于「已排产/制作中」，避免制作队列打架
+- 选题方法、六段式模板与首期完整初稿（蜜雪冰城）见
+  `briefs/daily-company-series.md`
+
+### 相关接口（/api/company）
+
+`GET pool` · `GET plan?days=7` · `POST plan` · `PUT plan/{date}` ·
+`POST plan/{date}/draft` · `DELETE plan/{date}` · `POST plan/{date}/schedule`
+
 ## 成片工艺（DataVideo 模板）
 
 - **AI 导演（默认开启，可按项目关闭）**：渲染时由 AI 逐镜决定运镜（8 种）/ 转场（5 类）/

@@ -6,6 +6,10 @@ import { FONT_STACK, mixHex, rand } from "../../dv/atmosphere";
 import { INK, LINE, PAPER, SHADOW, clamp01, easeBack, easeOut, exitFade } from "./ui";
 
 const Scene12: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
+  // 结尾镜不退场：composition 末尾有约 1s 垫尾（p 钉在 1），任何退场窗口都会提前清空画面；
+  // 硬收尾让三连徽章保持到最后一帧（入场仍有 flash 转场负责，无需淡出）。
+  const exitLate = 1;
+  void p;
   const confetti = useMemo(
     () =>
       Array.from({ length: 30 }, (_, k) => ({
@@ -20,6 +24,13 @@ const Scene12: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
   );
   const badge = (i: number) => easeBack(clamp01((p - 0.08 - i * 0.14) / 0.26));
   const bob = (i: number) => Math.sin(p * Math.PI * 2 * 1.5 + i * 1.2) * 9;
+  // 连击脉冲：徽章全部就位后从左到右轮流放大一圈（吸睛节拍）
+  const combo = (i: number) => clamp01((p - 0.62 - i * 0.1) / 0.14);
+  const comboScale = (i: number) => 1 + Math.sin(combo(i) * Math.PI) * 0.14;
+  // 环绕光点：绕三徽章外圈巡游
+  const orbitA = p * Math.PI * 2 * 1.2;
+  const orbitX = 540 + Math.cos(orbitA) * 330;
+  const orbitY = 732 + Math.sin(orbitA) * 150;
 
   const BADGES = [
     { x: 540 - 300, icon: "heart" as const, hi: true },   // 点赞
@@ -29,7 +40,7 @@ const Scene12: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
 
   return (
     <AbsoluteFill style={{ background: `linear-gradient(158deg, ${c1} 0%, ${c2} 100%)`, fontFamily: FONT_STACK, overflow: "hidden" }}>
-      <div style={{ position: "absolute", inset: 0, opacity: exitFade(p) }}>
+      <div style={{ position: "absolute", inset: 0, opacity: exitLate }}>
         {/* 中央光晕托底 */}
         <div
           style={{
@@ -58,7 +69,7 @@ const Scene12: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
               style={{
                 position: "absolute", left: b.x, top: 640 + (1 - t) * 420 + bob(i),
                 width: 184, height: 184, opacity: clamp01(t * 1.3),
-                transform: `scale(${0.5 + t * 0.5})`,
+                transform: `scale(${(0.5 + t * 0.5) * comboScale(i)})`,
               }}
             >
               <div
@@ -103,6 +114,14 @@ const Scene12: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
             </div>
           );
         })}
+        {/* 环绕光点（巡游吸睛） */}
+        <div
+          style={{
+            position: "absolute", left: orbitX - 11, top: orbitY - 11,
+            width: 22, height: 22, borderRadius: "50%", background: accent,
+            opacity: 0.75, boxShadow: `0 0 16px ${accent}`,
+          }}
+        />
         {/* 徽章弹起时的冲击环 */}
         {[0, 1, 2].map((i) => {
           const q = clamp01((p - 0.16 - i * 0.14) / 0.36);

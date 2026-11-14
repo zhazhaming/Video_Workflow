@@ -3,7 +3,7 @@
 
 用法:
     python tools/tts_gen.py --pid <pid> --script storage/projects/<pid>/script.json \
-        [--voice zh-CN-YunxiNeural] [--rate "+6%"]
+        [--voice zh-CN-YunjianNeural] [--rate "+6%"]
 
 输出（stdout JSON）: {"pid", "voice_dir", "durations": {"s01_0": 2.31, ...}}
 逐句 wav 落在 remotion-engine/public/voice/projects/<pid>/，line id 约定 s{镜2位}_{句序}。

@@ -8,7 +8,9 @@ import { Bar, INK, LINE, PAPER, SHADOW, clamp01, easeOut, exitFade, makeDots } f
 const Scene01: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
   const dots = useMemo(() => makeDots(seed, 24, { x0: 40, x1: 1040, y0: 300, y1: 1560 }), [seed]);
   const inn = easeOut(clamp01(p / 0.15)); // 主入场：前 15% 完成
+  const spring = 1 + Math.sin(Math.min(1, p / 0.15) * Math.PI) * 0.04; // 入场微弹
   const halo = 1 + Math.sin(p * Math.PI * 2) * 0.035;
+  const doorOpen = easeOut(clamp01((p - 0.3) / 0.22)); // 门开漏光（中段巧思）
   // 四扇窗灯按序点亮，再随呼吸微微起伏
   const winOn = (i: number) => {
     const t = clamp01((p - 0.1 - i * 0.07) / 0.16);
@@ -18,6 +20,15 @@ const Scene01: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
   return (
     <AbsoluteFill style={{ background: `linear-gradient(160deg, ${c1} 0%, ${c2} 100%)`, fontFamily: FONT_STACK, overflow: "hidden" }}>
       <div style={{ position: "absolute", inset: 0, opacity: exitFade(p) }}>
+        {/* 视差网格（缓移） */}
+        <div
+          style={{
+            position: "absolute", inset: -60, opacity: 0.3,
+            backgroundImage: `linear-gradient(${LINE} 1px, transparent 1px), linear-gradient(90deg, ${LINE} 1px, transparent 1px)`,
+            backgroundSize: "100px 100px",
+            transform: `translateY(${p * -16}px)`,
+          }}
+        />
         {/* 呼吸光晕 + 旋转虚线轨道 */}
         <div
           style={{
@@ -48,7 +59,7 @@ const Scene01: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
         <div
           style={{
             position: "absolute", left: 540 - 240, top: 430 + (1 - inn) * 60,
-            opacity: inn, transform: `translateY(${Math.sin(p * Math.PI * 2 * 1.1) * 7}px)`,
+            opacity: inn, transform: `translateY(${Math.sin(p * Math.PI * 2 * 1.1) * 7}px) scale(${spring})`,
           }}
         >
           {/* 屋顶 */}
@@ -85,14 +96,23 @@ const Scene01: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
               }}
             />
           ))}
-          {/* 门 + 门牌 */}
+          {/* 门 + 门开漏光 */}
           <div
             style={{
               position: "absolute", left: 216, top: 344, width: 64, height: 106,
-              background: mixHex(accent, INK, 0.25), borderRadius: "12px 12px 0 0",
-              border: `3px solid ${INK}`, boxSizing: "border-box",
+              borderRadius: "12px 12px 0 0", border: `3px solid ${INK}`, boxSizing: "border-box",
+              background: mixHex(accent, INK, 0.25), overflow: "hidden",
             }}
-          />
+          >
+            <div
+              style={{
+                position: "absolute", inset: 0, background: "#FFE9A8",
+                opacity: doorOpen * 0.9, transformOrigin: "left center",
+                transform: `scaleX(${1 - doorOpen * 0.55})`,
+                filter: `blur(${2 + doorOpen * 4}px)`,
+              }}
+            />
+          </div>
         </div>
         {/* 名牌卡（骨架条，避免与字幕抢字） */}
         {[

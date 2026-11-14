@@ -37,7 +37,7 @@ def bgm_tracks():
 
 
 @router.get("/tts-sample")
-def tts_sample(voice_name: str = Query("zh-CN-YunxiNeural", alias="voice")):
+def tts_sample(voice_name: str = Query("zh-CN-YunjianNeural", alias="voice")):
     """音色试听样本（首次请求生成并缓存）。"""
     try:
         path = voice.sample_voice(voice_name)

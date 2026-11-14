@@ -39,7 +39,7 @@ def svc(pipe_env):
     return dl.DailyPipelineService()
 
 
-def _hot_item(title, platform="douyin", burst=90, hot=90, tag="", summary=""):
+def _hot_item(title, platform="douyin", burst=90, hot=90, tag="", summary="AI 工具"):
     return hs.HotItem(
         id=hs.item_id(platform, title), platform=platform, title=title,
         url="", hot=hot, burst=burst, tag=tag, summary=summary,
@@ -317,13 +317,13 @@ def test_pick_candidates_search_fill(svc, monkeypatch):
     monkeypatch.setattr(hs.service, "_latest", [_hot_item("英雄联盟S15决赛", burst=70)])
     searched = [
         {"title": "虎扑电竞 - 最电竞的世界", "url": "u0", "snippet": "门户站", "provider": "bing"},
-        {"title": "S16赛程公布", "url": "u1", "snippet": "拳头公布赛程", "provider": "bing"},
+        {"title": "新一代 AI 剪辑工具发布", "url": "u1", "snippet": "开源工具，30 秒出片", "provider": "bing"},
     ]
     monkeypatch.setattr(dl, "_theme_search", lambda q, max_results=6: searched)
     themes = [{"name": "电竞", "keywords": ["英雄联盟"]}]
     picked = svc._pick_candidates(2, [], themes, theme_search_fill=True)
     assert picked[0]["source"] == "hot"
-    assert picked[1]["title"] == "S16赛程公布" and picked[1]["source"] == "search"
+    assert picked[1]["title"] == "新一代 AI 剪辑工具发布" and picked[1]["source"] == "search"
 
 
 def test_pick_candidates_no_theme_pure_burst(svc, monkeypatch):
@@ -346,7 +346,7 @@ def test_prepare_batch_awaiting(svc, monkeypatch):
     monkeypatch.setattr(hs.service, "_latest", [_hot_item(f"热点{i}", burst=90 - i) for i in range(12)])
     run = svc.prepare_batch("auto")
     assert run["status"] == "awaiting_confirm"
-    assert len(run["candidates"]) == 10
+    assert len(run["candidates"]) == 2  # 热点配额：每天最多 2 条
     assert "未确认" in run["confirm_deadline"]
     assert run["notify"]["ok"] is False and "webhook" in run["notify"]["error"]
     assert svc._awaiting_run_id == run["id"]
@@ -384,16 +384,16 @@ def test_confirm_schedule_then_produce(svc, monkeypatch):
     monkeypatch.setattr(hs.service, "_latest", [_hot_item(f"热点{i}", burst=90 - i) for i in range(12)])
     _fake_agent(monkeypatch, svc)
     run = svc.prepare_batch("manual")
-    out = svc.confirm_batch(run["id"], [2, 5], schedule=True)
+    out = svc.confirm_batch(run["id"], [1, 2], schedule=True)
     assert out["status"] == "scheduled"
-    assert out["confirmed"]["indices"] == [2, 5]
+    assert out["confirmed"]["indices"] == [1, 2]
     assert out["produce_at"]
     assert [r["id"] for r in svc._scheduled_runs_due()] == [run["id"]]
     assert svc.get_run(run["id"])["status"] == "scheduled"  # 未到点不生产
     svc.produce_now(run["id"])
     final = _wait_terminal(svc, run["id"])
     assert final["status"] == "done"
-    assert [v["topic_title"] for v in final["videos"]] == ["热点1", "热点4"]
+    assert [v["topic_title"] for v in final["videos"]] == ["热点0", "热点1"]
     assert final["videos"][0]["has_video"]
 
 
@@ -401,10 +401,10 @@ def test_confirm_immediate_produces(svc, monkeypatch):
     monkeypatch.setattr(hs.service, "_latest", [_hot_item(f"热点{i}", burst=90 - i) for i in range(12)])
     _fake_agent(monkeypatch, svc)
     run = svc.prepare_batch("manual")
-    svc.confirm_batch(run["id"], [1, 3], schedule=False)
+    svc.confirm_batch(run["id"], [1, 2], schedule=False)
     final = _wait_terminal(svc, run["id"])
     assert final["status"] == "done"
-    assert [v["topic_title"] for v in final["videos"]] == ["热点0", "热点2"]
+    assert [v["topic_title"] for v in final["videos"]] == ["热点0", "热点1"]
     used = svc._load_state()["used"]
     assert hs.normalize_title("热点0") in used
 

@@ -72,11 +72,13 @@ export function buildDataVideoTimeline(props: RenderProps): Timeline {
   const beats = props.bgm?.beats ?? [];
   // offset 自己也必须落在拍网格上：否则所有切镜会整体偏 0.18~0.22s，
   // 而 build_props 是按绝对拍域吸附的（两边必须同一个 offset）。
-  const offset = snapToBeat(
-    Math.max(2.0, Math.max(0, (introFrames - 15) / FPS)),
-    beats,
-    0.45,
-  );
+  const offset = introFrames === 0
+    ? 0
+    : snapToBeat(
+        Math.max(2.0, Math.max(0, (introFrames - 15) / FPS)),
+        beats,
+        0.45,
+      );
 
   const unsnapped: number[] = [];
   const durs: number[] = [];

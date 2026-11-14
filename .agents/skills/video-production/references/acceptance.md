@@ -6,6 +6,7 @@
 ## 工具闸门（有工具能验的用工具）
 
 - [ ] **事实审计**：`python -X utf8 tools/facts_audit.py --script storage/projects/<pid>/script.json --research storage/projects/<pid>/research.json --strict` → `unverifiable=0` 才算过（查不到出处的数字删掉或改定性表述，或补来源进 research.json）。无人值守流水线按最终文件**重算**复核，是硬闸门。
+- [ ] **开场闸门（硬闸门）**：`python -X utf8 backend/tools/check_opening.py --script backend/storage/projects/<pid>/script.json` → 退出码 0 才算过；不通过就回改 `shots[0]`，不许带病渲染（规则见 `video-script/references/opening-formulas.md`）。
 - [ ] **机检**：`python -X utf8 tools/qa_report.py --video storage/renders/<pid>/final.mp4 --props .../props.json`（黑帧/静音/响度/落拍；建议级，结果会进 daily 飞书结果卡）。
 - [ ] **有界视觉自查**：`python -X utf8 tools/acceptance_frames.py --video .../final.mp4 --props .../props.json --out .../acceptance`（≤6 帧 540×960，前 2 张镜内帧带抖音裁切模拟版）→ Read 图片**一次批量判定**（下一节「画面」+ 安全画幅项），结果落 `.../acceptance.json`（建议级不拦截交付）。硬上限：一轮判定+一次复检，不逐帧反复看图。
 

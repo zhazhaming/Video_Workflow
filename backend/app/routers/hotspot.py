@@ -243,6 +243,25 @@ def ai_topics(req: AiTopicsRequest):
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"AI 选题生成失败：{e}")
 
+    # 规则兜底：模型自评的栏目不可靠。命中黑名单 / 归不到栏目 / 没开场数字的，
+    # 在这里统一定性（与 add_topics 同源规则），前端据此禁用「生成脚本」。
+    column_counts = {hs.COLUMN_AI: 0, hs.COLUMN_COMPANY: 0, hs.COLUMN_REJECT: 0}
+    for t in topics:
+        rule_col, rule_num, rule_reason = hs.classify_column(
+            str(t.get("title") or ""),
+            f"{t.get('angle') or ''} {t.get('why') or ''}",
+        )
+        if rule_col == hs.COLUMN_REJECT:
+            t["column"] = hs.COLUMN_REJECT
+            t["reject_reason"] = rule_reason
+        else:
+            col = str(t.get("column") or "").strip()
+            t["column"] = col if col in hs.COLUMN_CHOICES else rule_col
+            if t["column"] == hs.COLUMN_REJECT and not str(t.get("reject_reason") or "").strip():
+                t["reject_reason"] = "不属于 ai干活 / 公司大赏"
+        t["opening_number"] = str(t.get("opening_number") or "").strip() or rule_num
+        column_counts[t["column"]] = column_counts.get(t["column"], 0) + 1
+
     # 生成即落库（今日选题工作台），并把来源热点标题映射到平台列表
     ref_platforms = {hs.normalize_title(p.title): [hotspot_sources.PLATFORM_NAMES.get(x, x) for x in p.platforms] for p in picked}
     saved = hs.service.add_topics(topics, ref_platforms)
@@ -251,6 +270,7 @@ def ai_topics(req: AiTopicsRequest):
         "saved": [s.model_dump() for s in saved],
         "ref_counts": hs.service.ref_counts(),
         "source_titles": [p.title for p in picked],
+        "column_counts": column_counts,
     }
 
 

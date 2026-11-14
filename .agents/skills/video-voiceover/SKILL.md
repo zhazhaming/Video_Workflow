@@ -13,10 +13,10 @@ description: 短视频配音。用户要配音、TTS、换音色、调语速、�
 
 ```bash
 cd backend && python tools/tts_gen.py --pid <pid> --script storage/projects/<pid>/script.json \
-  [--voice zh-CN-YunxiNeural] [--rate "+6%"]
+  [--voice zh-CN-YunjianNeural] [--rate "+6%"]
 ```
 
-- 音色候选（试听靠后端 `GET /api/voice/samples` 或直接合成后听）：`zh-CN-YunxiNeural`（男·阳光，默认）、`zh-CN-YunjianNeural`（男·沉稳）、`zh-CN-YunyangNeural`（男·新闻）、`zh-CN-XiaoxiaoNeural`（女·活泼）、`zh-CN-XiaoyiNeural`（女·温柔）。语速默认 `+6%`（短视频节奏），healing 语气可 `+0%`。
+- 音色候选（试听靠后端 `GET /api/voice/samples` 或直接合成后听）：`zh-CN-YunjianNeural`（男·沉稳磁性，默认）、`zh-CN-YunyangNeural`（男·新闻）、`zh-CN-XiaoxiaoNeural`（女·活泼）、`zh-CN-XiaoyiNeural`（女·温柔）。语速默认 `+6%`（短视频节奏），healing 语气可 `+0%`。
 - 输出 stdout JSON 的 `durations`（`{line_id: 秒}`）是**下游 props 的权威时长**，直接采用。
 - 工具内部已完成（voice.py）：同场整段合成+词边界切句（保留语调上下文，失败回退逐句）→ 裁静音（头留 30ms/尾留 120ms）→ 轻压缩 + highpass 75Hz + loudnorm **-13 LUFS**（Remotion 精简版 ffmpeg 缺滤子时三级降级，保证必有真 wav）。
 

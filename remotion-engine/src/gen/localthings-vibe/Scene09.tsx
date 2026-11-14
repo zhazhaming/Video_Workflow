@@ -6,7 +6,7 @@ import { FONT_STACK, mixHex, rand } from "../../dv/atmosphere";
 import { INK, LINE, PAPER, SHADOW, clamp01, easeOut, exitFade } from "./ui";
 
 const Scene09: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
-  const TXT = "90台真机 · 50位贡献者";
+  const TXT = "破千星 · 90台真机 · 50人";
   const chars = Math.floor(Math.min(1, Math.max(0, (p - 0.32) / 0.3)) * TXT.length);
   // 90 格真机墙（9×10）
   const wall = useMemo(

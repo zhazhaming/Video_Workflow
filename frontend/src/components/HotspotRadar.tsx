@@ -1178,6 +1178,32 @@ export const HotspotRadar = ({
                 {topics.map((t, idx) => (
                   <div className="topic-card" key={idx}>
                     <div className="topic-title">{t.title}</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                      {t.column && (
+                        <span
+                          className="chip"
+                          style={
+                            t.column === "淘汰"
+                              ? { background: "#fde8e8", color: "#b42318" }
+                              : { background: "#e8f2ff", color: "#175cd3" }
+                          }
+                        >
+                          {t.column}
+                        </span>
+                      )}
+                      {t.opening_number ? (
+                        <span className="chip">开场数字 {t.opening_number}</span>
+                      ) : (
+                        <span className="chip" style={{ background: "#fff6e5", color: "#b54708" }}>
+                          ⚠ 缺开场数字
+                        </span>
+                      )}
+                      {t.column === "淘汰" && (
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          {t.reject_reason || "不属于 ai干活 / 公司大赏"}
+                        </span>
+                      )}
+                    </div>
                     {t.ref && <div className="muted" style={{ fontSize: 12 }}>蹭热点：{t.ref}</div>}
                     <div className="topic-line">
                       <b>角度</b> {t.angle}
@@ -1194,6 +1220,8 @@ export const HotspotRadar = ({
                       <button
                         className="btn primary small"
                         style={{ flex: 1 }}
+                        disabled={t.column === "淘汰"}
+                        title={t.column === "淘汰" ? `已淘汰：${t.reject_reason || "不属于 ai干活 / 公司大赏"}` : undefined}
                         onClick={() => onUseTopic(t.title)}
                       >
                         用此选题新建视频项目 →
@@ -1317,6 +1345,32 @@ export const HotspotRadar = ({
                         </button>
                         <div className="topic-row-main">
                           <div className="topic-row-title">{t.title}</div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
+                            {t.column && (
+                              <span
+                                className="chip"
+                                style={
+                                  t.column === "淘汰"
+                                    ? { background: "#fde8e8", color: "#b42318" }
+                                    : { background: "#e8f2ff", color: "#175cd3" }
+                                }
+                              >
+                                {t.column}
+                              </span>
+                            )}
+                            {t.opening_number ? (
+                              <span className="chip">开场数字 {t.opening_number}</span>
+                            ) : (
+                              <span className="chip" style={{ background: "#fff6e5", color: "#b54708" }}>
+                                ⚠ 缺开场数字
+                              </span>
+                            )}
+                            {t.column === "淘汰" && (
+                              <span className="muted" style={{ fontSize: 12 }}>
+                                {t.reject_reason || "不属于 ai干活 / 公司大赏"}
+                              </span>
+                            )}
+                          </div>
                           <div className="muted" style={{ fontSize: 12 }}>
                             {t.ref_platforms.length > 0 &&
                               `${t.ref_platforms.join("/")} · `}
@@ -1359,15 +1413,19 @@ export const HotspotRadar = ({
                               <>
                                 <button
                                   className="btn primary small"
-                                  disabled={genBusyId === t.id}
+                                  disabled={genBusyId === t.id || t.column === "淘汰"}
                                   onClick={() => genScriptFromTopic(t)}
-                                  title="建项目 + AI 自动生成分镜脚本，一步到位"
+                                  title={
+                                    t.column === "淘汰"
+                                      ? `已淘汰：${t.reject_reason || "不属于 ai干活 / 公司大赏"}`
+                                      : "建项目 + AI 自动生成分镜脚本，一步到位"
+                                  }
                                 >
                                   {genBusyId === t.id ? "生成中..." : "⚡ 生成脚本"}
                                 </button>
                                 <button
                                   className="btn small"
-                                  disabled={genBusyId === t.id}
+                                  disabled={genBusyId === t.id || t.column === "淘汰"}
                                   onClick={() => buildProjectFromTopic(t)}
                                   title="只建项目，不生成脚本"
                                 >

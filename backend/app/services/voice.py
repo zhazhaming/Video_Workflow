@@ -546,7 +546,10 @@ def mix_line_track(project_id: str, props: dict) -> dict:
     """
     beats = list(((props.get("bgm") or {}).get("beats") or [])[:400])
     intro_frames = 0 if props.get("title_card") is False else _TRACK_INTRO_FRAMES
-    offset = _track_snap(max(2.0, max(0.0, (intro_frames - 15) / _TRACK_FPS)), beats, 0.45)
+    # 无片头卡（title_card=False）时不留 2s 空白：整轨从 0 开始，首句直接进。
+    offset = 0.0 if intro_frames == 0 else _track_snap(
+        max(2.0, max(0.0, (intro_frames - 15) / _TRACK_FPS)), beats, 0.45
+    )
 
     # 逐场布局（与 DataVideo.buildLayout 一致）
     scenes: list[dict] = []

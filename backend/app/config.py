@@ -37,7 +37,11 @@ DAILY_PIPELINE_ENABLED = os.getenv("DAILY_PIPELINE_ENABLED", "1") not in ("0", "
 DAILY_PIPELINE_HOUR = int(os.getenv("DAILY_PIPELINE_HOUR", "3"))
 DAILY_PIPELINE_MINUTE = int(os.getenv("DAILY_PIPELINE_MINUTE", "30"))
 DAILY_PIPELINE_COUNT = int(os.getenv("DAILY_PIPELINE_COUNT", "3"))
-DAILY_PIPELINE_TARGET_SECONDS = int(os.getenv("DAILY_PIPELINE_TARGET_SECONDS", "60"))
+DAILY_PIPELINE_TARGET_SECONDS = int(os.getenv("DAILY_PIPELINE_TARGET_SECONDS", "50"))
+# 热点候选配额：每天最多推几条热点、其中至少几条必须来自「ai干活」栏目。
+# 目的：热点只是原料，不能让泛资讯选题把账号标签冲散（详见 AGENTS.md 开场/栏目规则）。
+DAILY_HOTSPOT_QUOTA = int(os.getenv("DAILY_HOTSPOT_QUOTA", "2"))
+DAILY_AI_COLUMN_QUOTA = int(os.getenv("DAILY_AI_COLUMN_QUOTA", "1"))
 # 候选确认：先把 10 条候选推飞书，窗口内可点选做哪几条，超时按默认前 count 条开做
 DAILY_PIPELINE_CONFIRM_MINUTES = int(os.getenv("DAILY_PIPELINE_CONFIRM_MINUTES", "20"))
 # 飞书群自定义机器人 webhook（空=不推送仅本地候选）；开了签名校验的机器人需再配 SECRET
@@ -89,7 +93,7 @@ MODELS_CONFIG = Path(os.getenv("MODELS_CONFIG") or (BACKEND_DIR / "models.json")
 # 脚本生成提示词模板（见 backend/prompts.json）
 PROMPTS_CONFIG = Path(os.getenv("PROMPTS_CONFIG") or (BACKEND_DIR / "prompts.json"))
 
-TTS_VOICE = os.getenv("TTS_VOICE", "zh-CN-YunxiNeural")
+TTS_VOICE = os.getenv("TTS_VOICE", "zh-CN-YunjianNeural")
 TTS_RATE = os.getenv("TTS_RATE", "+6%")
 
 RENDER_TIMEOUT_SECONDS = int(os.getenv("RENDER_TIMEOUT_SECONDS", "1800"))

@@ -11,15 +11,20 @@ const Scene06: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
   const toLocal = clamp01((p - 0.42) / 0.14); // 0=CLOUD 1=LOCAL
   const cloudFade = clamp01((p - 0.46) / 0.16); // 云褪灰
   const snapT = clamp01((p - 0.44) / 0.1); // 连线断开进度
+  // 拨杆瞬间屏幕轻震（衰减抖动）
+  const shake = p > 0.42 && p < 0.62 ? Math.sin(p * 90) * 7 * (1 - (p - 0.42) / 0.2) : 0;
+  // 拨到 LOCAL 后云向右上飘走
+  const cloudFly = clamp01((p - 0.52) / 0.4);
 
   return (
     <AbsoluteFill style={{ background: `linear-gradient(160deg, ${c1} 0%, ${c2} 100%)`, fontFamily: FONT_STACK, overflow: "hidden" }}>
-      <div style={{ position: "absolute", inset: 0, opacity: exitFade(p) }}>
-        {/* 灰云（断线后褪成虚线轮廓） */}
+      <div style={{ position: "absolute", inset: 0, opacity: exitFade(p), transform: `translateX(${shake}px)` }}>
+        {/* 灰云（断线后褪成虚线轮廓并飘走） */}
         <div
           style={{
-            position: "absolute", left: 540 - 150, top: 350,
-            opacity: 1 - cloudFade * 0.75, transform: `translateY(${cloudFade * -18}px)`,
+            position: "absolute", left: 540 - 150 + cloudFly * 260, top: 350 - cloudFly * 120,
+            opacity: (1 - cloudFade * 0.75) * (1 - cloudFly * 0.8),
+            transform: `translateY(${cloudFade * -18}px) rotate(${cloudFly * 8}deg) scale(${1 - cloudFly * 0.15})`,
           }}
         >
           {[
@@ -98,6 +103,25 @@ const Scene06: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
               border: `4px solid ${INK}`, boxShadow: SHADOW, boxSizing: "border-box",
             }}
           />
+          {/* 拨杆火花 */}
+          {p > 0.44 && p < 0.58 &&
+            [0, 1, 2, 3].map((i) => {
+              const q = clamp01((p - 0.44) / 0.14);
+              const ang = -Math.PI / 2 + (i - 1.5) * 0.5;
+              return (
+                <span
+                  key={i}
+                  style={{
+                    position: "absolute",
+                    left: 96 + toggleT * 356 + Math.cos(ang) * q * 120 - 6,
+                    top: 144 + Math.sin(ang) * q * 90 - 6,
+                    width: 12, height: 12, borderRadius: "50%",
+                    background: i % 2 ? accent : mixHex(accent, PAPER, 0.4),
+                    opacity: 1 - q,
+                  }}
+                />
+              );
+            })}
         </div>
 
         {/* 自由信号环（开关拨到 LOCAL 后从面板发散） */}

@@ -4,6 +4,10 @@ import type {
   Briefing,
   BriefingComment,
   ComfyStatus,
+  CompanyDraft,
+  CompanyPlan,
+  CompanyPlanEntry,
+  CompanyPool,
   FlowAudioInfo,
   FlowGates,
   FlowState,
@@ -330,7 +334,13 @@ export const generateAiTopics = (
   itemIds: string[],
   opts: { direction_id?: string; count?: number; model_id?: string } = {}
 ) =>
-  request<{ topics: AiTopic[]; saved: SavedTopic[]; ref_counts: Record<string, number>; source_titles: string[] }>(
+  request<{
+    topics: AiTopic[];
+    saved: SavedTopic[];
+    ref_counts: Record<string, number>;
+    source_titles: string[];
+    column_counts?: Record<string, number>;
+  }>(
     "/api/hotspot/ai-topics",
     {
       method: "POST",
@@ -705,3 +715,34 @@ export const pipelineConfirmRun = (
 
 export const pipelineProduceNow = (runId: string) =>
   request<PipelineRun>(`/api/pipeline/runs/${runId}/produce`, { method: "POST" });
+
+// ---- 每日一家公司（系列档期板）----
+
+export const companyPool = () => request<CompanyPool>("/api/company/pool");
+
+export const companyPlan = (days = 7) =>
+  request<CompanyPlan>(`/api/company/plan?days=${days}`);
+
+export const companyPick = (date: string, companyId: string) =>
+  request<CompanyPlanEntry>("/api/company/plan", {
+    method: "POST",
+    body: JSON.stringify({ date, company_id: companyId }),
+  });
+
+export const companySaveDraft = (date: string, draft: CompanyDraft) =>
+  request<CompanyPlanEntry>(`/api/company/plan/${date}`, {
+    method: "PUT",
+    body: JSON.stringify({ draft }),
+  });
+
+export const companyRegenerateDraft = (date: string) =>
+  request<CompanyPlanEntry>(`/api/company/plan/${date}/draft`, { method: "POST" });
+
+export const companyCancelPlan = (date: string) =>
+  request<{ ok: boolean; date: string }>(`/api/company/plan/${date}`, { method: "DELETE" });
+
+export const companySchedule = (date: string, now = false) =>
+  request<CompanyPlanEntry>(`/api/company/plan/${date}/schedule`, {
+    method: "POST",
+    body: JSON.stringify({ now }),
+  });

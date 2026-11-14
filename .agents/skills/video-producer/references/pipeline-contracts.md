@@ -27,6 +27,10 @@ remotion-engine/
 
 ## 2. script.json（文案产物，ScriptDraft）
 
+**开场与片长（硬规则，2026-11-12 起）**：0–5 秒必须是「数字 → 反差 → 代价」；前 5 秒不得出现
+自我介绍、「本期/今天/大家好」、栏目名。默认 `target_seconds = 45`（30–60 区间），3 台阶 × 15 秒，
+第 10 秒前必须交付第一个完整价值。`shots` 不写固定开场白/结束语，不出现「我是阿扎」。
+
 ```json
 {
   "title": "标题（≤60字，口播标题建议≤24字）",
@@ -43,7 +47,7 @@ remotion-engine/
 
 - `colors`：该镜背景两色（hex `#RRGGBB`），默认浅色纸感（浅底深墨 + 低饱和强调色），贴合该幕情绪；不要默认深底霓虹。
 - `lines`：每幕 1~3 句（上限 8），每句 ≤20 字（写稿规则见 video-script skill）。
-- 幕数参考：`clamp(round(target_seconds / 9), 8, 22)`；纯创作短 footage 可少于此值，但每幕至少 1 句。
+- 幕数参考：`clamp(round(target_seconds / 4), 8, 16)`（45 秒 ≈ 11 幕）；纯创作短 footage 可少于此值，但每幕至少 1 句。
 
 ## 3. line id 与时长/停顿公式
 

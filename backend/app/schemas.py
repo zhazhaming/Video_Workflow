@@ -35,8 +35,8 @@ class ScriptDraft(BaseModel):
 
 class GenRequest(BaseModel):
     topic: str = Field(min_length=2, max_length=800)
-    style: str = Field(default="故事向竖屏短视频，第一人称，口语化，开头有钩子，结尾有互动引导", max_length=500)
-    target_seconds: int = Field(default=60, ge=15, le=240)
+    style: str = Field(default="科普口播，结论先行，口语化，开场给数字与反差，结尾一句互动提问", max_length=500)
+    target_seconds: int = Field(default=45, ge=15, le=240)
     model_id: Optional[str] = None  # models.json 里的模型 id；空则用默认
     prompt: Optional[str] = Field(default=None, max_length=4000)  # 脚本生成提示词指引（模板或自定义）
 
@@ -452,7 +452,7 @@ class ProjectSettings(BaseModel):
     )
     prompt: str = Field(default="", max_length=4000)
     target_seconds: int = Field(default=180, ge=15, le=240)
-    voice: str = "zh-CN-YunxiNeural"
+    voice: str = "zh-CN-YunjianNeural"
     tts_rate: str = "+6%"
     bgm: str = "auto"  # public/bgm 下的文件名（不含扩展名）；"auto"=按剧情自动匹配；空串=无 BGM
     # 成片模板：datavideo=现有 DataVideo；motionshow=设计令牌驱动的 MotionShow

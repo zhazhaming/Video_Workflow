@@ -70,6 +70,66 @@ SCIENCE_TOPICS: list[tuple[str, list[str]]] = [
 ]
 
 
+# ---- 栏目归属 / 开场闸门（2026-11-13）----
+# 目的：热点是原料不是选题。每条热点必须先过「能归到哪个栏目」和「开场有没有数字」两道门。
+COLUMN_AI = "ai干活"
+COLUMN_COMPANY = "公司大赏"
+COLUMN_REJECT = "淘汰"
+COLUMN_CHOICES = (COLUMN_AI, COLUMN_COMPANY, COLUMN_REJECT)
+
+# 硬过滤：命中即淘汰。行情预测做了也不涨粉、还容易被判「不适宜公开」。
+BLOCK_RULES: list[tuple[str, str]] = [
+    (r"涨停|跌停|涨幅|跌幅|暴涨|暴跌|大涨|大跌|高开|低开|收盘|开盘|抄底|加仓|减仓|目标价|个股|概念股|市值蒸发|市值重回",
+     "行情预测/涨跌点评"),
+    (r"A股|港股|美股|纳指|道指|沪指|创业板|科创板|北交所|比特币|以太坊|币价", "股市/币圈行情"),
+    (r"彩票|赌球|竞猜|偏方|包治|确诊|治愈率|神医", "医疗/博彩等高风险内容"),
+    (r"空难|遇难|伤亡|塌方|爆炸事故", "灾难事故"),
+    (r"塌房|绯闻|出轨|离婚大战|人设崩塌", "明星八卦"),
+]
+
+AI_COLUMN_RE = re.compile(
+    r"AI|人工智能|大模型|智能体|agent|claude|gpt|gemini|kimi|qwen|deepseek|开源|编程|代码|"
+    r"软件|工具|插件|浏览器|自动化|效率|提示词|prompt|绘图|视频生成|数字人|机器人|算力",
+    re.I,
+)
+COMPANY_COLUMN_RE = re.compile(
+    r"公司|企业|品牌|创始人|上市|IPO|融资|营收|财报|门店|工厂|供应链|收购|合并|裁员|招股|估值|"
+    r"行业|产业|芯片|半导体|手机|汽车|电车|显卡|GPU|CPU|内存|硬盘|显示器|相机|耳机|家电|硬件|"
+    r"奶茶|咖啡|零售|制造|出口|关税|价格战|渠道|加盟"
+)
+_NUMBER_RE = re.compile(
+    r"\d+(?:\.\d+)?\s*(?:%|％|亿|万|千|百|纳米|毫米|厘米|公里|吨|年|个月|月|天|小时|分钟|秒|次|倍|"
+    r"家|人|台|元|块|度|层|颗|项|种|款|GB|TB)?",
+    re.I,
+)
+
+
+def extract_opening_number(text: str) -> str:
+    """从标题/摘要里抠出第一个可用作开场的数字（含单位）。抠不到返回空串。"""
+    m = _NUMBER_RE.search(text or "")
+    return m.group(0).strip() if m else ""
+
+
+def classify_column(title: str, summary: str = "") -> tuple[str, str, str]:
+    """返回 (column, opening_number, reject_reason)。
+
+    - 命中黑名单 → 淘汰（reason 说明命中什么）
+    - 否则按关键词归到 ai干活 / 公司大赏
+    - 两个栏目都不沾 → 淘汰（这就是"垂直"的机制保障）
+    """
+    text = f"{title or ''} {summary or ''}".strip()
+    for pattern, reason in BLOCK_RULES:
+        m = re.search(pattern, text, re.I)
+        if m:
+            return COLUMN_REJECT, "", f"硬过滤：{reason}（命中「{m.group(0)}」）"
+    number = extract_opening_number(text)
+    if AI_COLUMN_RE.search(text):
+        return COLUMN_AI, number, ""
+    if COMPANY_COLUMN_RE.search(text):
+        return COLUMN_COMPANY, number, ""
+    return COLUMN_REJECT, number, "不属于 ai干活 / 公司大赏"
+
+
 # ---- 数据模型 ----
 
 
@@ -119,6 +179,9 @@ class SavedTopic(BaseModel):
     status: str = "todo"  # todo | doing | done | dropped
     project_id: str = ""  # 一键建项目后回填，可从热点雷达直达项目
     note: str = ""  # 创作者备注（如：已联系出镜、素材在某文件夹）
+    column: str = ""  # ai干活 | 公司大赏 | 淘汰（空=未判定）
+    opening_number: str = ""  # 开场要用的具体数字；空=缺数字，写稿必须补
+    reject_reason: str = ""  # 非空即淘汰，前端据此禁用「生成脚本」
 
 
 TOPIC_STATUS_FLOW = {"todo": "doing", "doing": "done", "done": "todo", "dropped": "todo"}
@@ -718,6 +781,18 @@ class HotspotService:
             if not title:
                 continue
             ref = str(t.get("ref") or "").strip()
+            # 栏目归属与开场数字：模型没给或给得不合规 → 用规则兜底（规则优先于模型）
+            rule_col, rule_num, rule_reason = classify_column(
+                title, f"{t.get('angle') or ''} {t.get('why') or ''}"
+            )
+            column = str(t.get("column") or "").strip()
+            reason = str(t.get("reject_reason") or "").strip()
+            if rule_col == COLUMN_REJECT:
+                column, reason = COLUMN_REJECT, rule_reason or reason or "不属于 ai干活 / 公司大赏"
+            elif column not in COLUMN_CHOICES:
+                column = rule_col
+            if column == COLUMN_REJECT and not reason:
+                reason = "不属于 ai干活 / 公司大赏"
             saved.append(
                 SavedTopic(
                     id=uuid.uuid4().hex[:8],
@@ -728,6 +803,9 @@ class HotspotService:
                     ref=ref[:80],
                     ref_platforms=ref_platforms.get(normalize_title(ref), []),
                     created_at=now_s,
+                    column=column,
+                    opening_number=str(t.get("opening_number") or "").strip()[:40] or rule_num,
+                    reject_reason=reason[:120],
                 )
             )
         self.store.save_topics(existing + saved)

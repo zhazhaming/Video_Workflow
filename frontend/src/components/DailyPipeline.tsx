@@ -16,6 +16,7 @@ import type {
   PipelineTheme,
   PipelineVideo,
 } from "../types";
+import { CompanySeries } from "./CompanySeries";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   awaiting_confirm: { label: "待确认", cls: "dp-chip warn" },
@@ -75,6 +76,10 @@ export const DailyPipeline = ({
 }) => {
   const [status, setStatus] = useState<PipelineStatus | null>(null);
   const [runs, setRuns] = useState<PipelineRun[]>([]);
+  // 两条轨道：热点自动出片 / 每日一家公司（公司档期板）
+  const [track, setTrack] = useState<"hot" | "company">(() =>
+    new URLSearchParams(window.location.search).get("track") === "company" ? "company" : "hot"
+  );
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -293,6 +298,7 @@ export const DailyPipeline = ({
           <span className={`dp-chip ${run.trigger === "manual" ? "manual" : ""}`}>
             {run.trigger === "manual" ? "手动" : "定时"}
           </span>
+          {run.kind === "company" && <span className="dp-chip manual">公司</span>}
           <span className={meta.cls}>{meta.label}</span>
           {run.confirmed && (
             <span className="muted">
@@ -338,6 +344,16 @@ export const DailyPipeline = ({
     );
   };
 
+  // ---- 公司轨道：档期板（选公司 / 初稿 / 排产）----
+  if (track === "company") {
+    return (
+      <div className="dp">
+        <TrackTabs track={track} onChange={setTrack} />
+        <CompanySeries onOpenProject={onOpenProject} />
+      </div>
+    );
+  }
+
   // ---- 查看更多：全量历史，默认全部收起 ----
   if (historyFull) {
     return (
@@ -365,6 +381,7 @@ export const DailyPipeline = ({
 
   return (
     <div className="dp">
+      <TrackTabs track={track} onChange={setTrack} />
       {err && <div className="error">{err}</div>}
       {/* 状态卡 */}
       <div className="panel dp-status">
@@ -572,10 +589,23 @@ export const DailyPipeline = ({
               const checked = (picks[awaitingRun.id] ?? []).includes(idx);
               return (
                 <label className={`dp-cand ${checked ? "picked" : ""}`} key={idx}>
-                  <input type="checkbox" checked={checked}
+                  <input type="checkbox" checked={checked} disabled={c.column === "淘汰"}
                     onChange={() => togglePick(awaitingRun.id, idx)} />
                   <span className="dp-cand-idx">{idx}</span>
                   <span className="dp-cand-title" title={c.title}>{c.title}</span>
+                  {c.column && (
+                    <span
+                      className="chip"
+                      style={
+                        c.column === "淘汰"
+                          ? { background: "#fde8e8", color: "#b42318" }
+                          : { background: "#e8f2ff", color: "#175cd3" }
+                      }
+                    >
+                      {c.column}
+                    </span>
+                  )}
+                  {c.opening_number && <span className="chip">开场 {c.opening_number}</span>}
                   <span className="muted">
                     {c.platform_name} · 波 {fmtBurst(c.burst)}
                     {c.theme_name && <span className="dp-cand-theme">｜{c.theme_name}</span>}
@@ -605,7 +635,7 @@ export const DailyPipeline = ({
       {!runs.length && !err && (
         <div className="panel">
           <div className="muted">
-            还没有运行记录。定义好方向后点「▶ 立即生成」试跑一批：先出 10 条候选推飞书/本页勾选，
+            还没有运行记录。定义好方向后点「▶ 立即生成」试跑一批：每天最多出 2 条热点候选（其中至少 1 条来自 ai干活），推飞书/本页勾选，
             确认后才制作（每条约 20~60 分钟）。
           </div>
         </div>
@@ -641,6 +671,27 @@ const SkippedCandidates = ({ candidates }: { candidates: PipelineRun["candidates
   );
 };
 
+const TrackTabs = ({
+  track,
+  onChange,
+}: {
+  track: "hot" | "company";
+  onChange: (t: "hot" | "company") => void;
+}) => (
+  <div className="dp-tracks">
+    <button className={`tab ${track === "hot" ? "tab-active" : ""}`} onClick={() => onChange("hot")}>
+      🔥 热点流水线
+    </button>
+    <button
+      className={`tab ${track === "company" ? "tab-active" : ""}`}
+      onClick={() => onChange("company")}
+    >
+      🏢 每日公司
+      <span className="dp-chip manual" style={{ marginLeft: 6 }}>系列</span>
+    </button>
+  </div>
+);
+
 const VideoCard = ({
   v,
   playing,
@@ -674,7 +725,8 @@ const VideoCard = ({
           {v.title || v.topic_title}
         </div>
         <div className="muted mono">
-          {v.pid} · {fmtBurst(v.burst)} 波 · {fmtSecs(v.duration_seconds)}
+          {v.pid} · {v.platform === "company" ? "每日公司" : `${fmtBurst(v.burst)} 波`} ·{" "}
+          {fmtSecs(v.duration_seconds)}
           {v.theme_name ? ` · ${v.theme_name}` : ""}
         </div>
         {v.status === "failed" && v.error && <div className="bad dp-err">{v.error}</div>}

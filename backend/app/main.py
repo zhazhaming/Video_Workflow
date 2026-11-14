@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import ensure_dirs
-from .routers import bgm, comfy, flow, hotspot, model_settings, music_chart, pipeline, projects, publish, scripts, tasks
+from .routers import bgm, company, comfy, flow, hotspot, model_settings, music_chart, pipeline, projects, publish, scripts, tasks
 from .services import daily as daily_pipeline
 from .services import hotspot as hotspot_service
 from .services import music_chart as music_chart_service
@@ -35,6 +35,7 @@ app.include_router(model_settings.router)
 app.include_router(hotspot.router)
 app.include_router(music_chart.router)
 app.include_router(pipeline.router)
+app.include_router(company.router)
 app.include_router(publish.router)
 app.include_router(flow.router)
 

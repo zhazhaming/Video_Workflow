@@ -21,8 +21,9 @@ const Scene04: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
   );
   const cardIn = easeBack(clamp01((p - 0.04) / 0.24));
   const badgeIn = easeOut(clamp01((p - 0.24) / 0.26));
-  // 星数计数（0→1109），置于安全区，替代引擎浮层（浮层容器会越安全线）
-  const starCount = Math.round(1109 * easeOut(clamp01((p - 0.18) / 0.5)));
+  // 星数计数（0→1000+，破千星），置于安全区，替代引擎浮层（浮层容器会越安全线）
+  const rawCount = Math.round(1000 * easeOut(clamp01((p - 0.18) / 0.5)));
+  const starCount = rawCount >= 1000 ? "1000+" : `${rawCount}`;
   const numIn = easeOut(clamp01((p - 0.18) / 0.24));
 
   return (
@@ -149,6 +150,14 @@ const Scene04: React.FC<GenSceneProps> = ({ p, c1, c2, accent, seed }) => {
           >
             {starCount}
           </span>
+          {rawCount >= 1000 && (
+            <span
+              style={{
+                width: 56, height: 56, background: accent, alignSelf: "flex-start", marginTop: 18,
+                clipPath: "polygon(50% 0, 63% 36%, 100% 38%, 71% 60%, 82% 100%, 50% 76%, 18% 100%, 29% 60%, 0 38%, 37% 36%)",
+              }}
+            />
+          )}
           <span style={{ fontSize: 34, fontWeight: 700, fontFamily: MONO_STACK, color: MUTED, marginBottom: 10 }}>
             stars
           </span>

@@ -11,7 +11,7 @@
 
 ## 环境变量（backend/.env）
 
-`TTS_VOICE`（默认 zh-CN-YunxiNeural）、`TTS_RATE`（+6%）、`TTS_RETRIES`、`TTS_TIMEOUT_SECONDS`、`TTS_RETRY_DELAY`。
+`TTS_VOICE`（默认 zh-CN-YunjianNeural）、`TTS_RATE`（+6%）、`TTS_RETRIES`、`TTS_TIMEOUT_SECONDS`、`TTS_RETRY_DELAY`。
 
 ## 整轨预混（渲染前置，为什么必须有）
 

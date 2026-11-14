@@ -46,7 +46,8 @@ cd /d "%~dp0frontend"
 start "video-workflow-frontend" cmd /k "npm run dev"
 
 echo [3/3] Starting backend watchdog in a new window...
-REM 看护：每 60s 探活 /api/health，后端挂掉自动重启（每日流水线依赖后端常驻）
+REM Watchdog probes /api/health every 60s and auto-restarts the backend if it
+REM dies (the daily pipeline depends on a resident backend).
 start "video-workflow-watchdog" cmd /k "%~dp0watchdog.bat"
 
 echo Waiting for services...
@@ -58,9 +59,9 @@ echo Done. Browser will open http://localhost:5173
 echo To stop: run stop.bat or close the three service windows (backend/frontend/watchdog).
 ping -n 4 127.0.0.1 >nul
 
-REM ---- 可选：开机自启 / 睡眠唤醒兜底（需要时手动执行一次，按需取消注释）----
-REM 开机自启（ONSTART 需管理员权限的终端执行）：
+REM ---- Optional: auto-start on boot / scheduled fallback (run once by hand if needed) ----
+REM Auto-start on boot (ONSTART needs an elevated terminal):
 REM schtasks /Create /F /TN "VideoWorkflowBoot" /SC ONSTART /TR "\"D:\Work\video-workflow\launch.bat\""
-REM 每天凌晨 03:00 拉起一次兜底（机器睡眠中不会执行；需唤醒执行请在「任务计划程序」里
-REM 打开该任务的「唤醒计算机运行此任务」和「不管用户是否登录都要运行」）：
+REM Daily 03:00 fallback launch (will not fire while the machine sleeps; enable
+REM "wake to run" in Task Scheduler if you need it to wake the machine):
 REM schtasks /Create /F /TN "VideoWorkflowDaily" /SC DAILY /ST 03:00 /TR "\"D:\Work\video-workflow\launch.bat\""

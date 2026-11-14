@@ -32,6 +32,17 @@ def test_build_prompt_includes_custom_prompt():
     assert "创作提示词" in text
 
 
+def test_build_prompt_includes_opening_and_duration_rules():
+    req = GenRequest(topic="测试选题", target_seconds=45)
+    text = build_generate_user_prompt(req)
+    assert "数字 → 反差 → 代价" in text
+    assert "45" in text
+    assert "15 秒" in text
+    # 人设开场/结束语已移除：提示词里不得再出现
+    assert "我是阿扎" not in text
+    assert "带你领略科普知识" not in text
+
+
 def test_build_prompt_without_custom_prompt():
     req = GenRequest(topic="测试选题", target_seconds=30)
     text = build_generate_user_prompt(req)

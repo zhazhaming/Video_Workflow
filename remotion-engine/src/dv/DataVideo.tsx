@@ -113,7 +113,7 @@ const SceneBackdrop: React.FC<{
               width: 560,
               height: 560,
               borderRadius: "50%",
-              background: `radial-gradient(circle, ${accent}${Math.round(18 + pul * 22).toString(16)} 0%, transparent 70%)`,
+              background: `radial-gradient(circle, ${accent}${Math.round(8 + pul * 10).toString(16)} 0%, transparent 70%)`,
               filter: "blur(6px)",
             }}
           />

@@ -87,8 +87,9 @@ def main() -> int:
 
     beats_grid = [round(k * (60.0 / bpm), 4) for k in range(600)]
     raw_off = max(0.0, (intro_frames - 15) / fps)
-    # offset 必须与 timeline.ts 完全一致：先 max(2.0,...)，再吸附到拍（不是“取下一个拍”）
-    offset = snap(max(2.0, raw_off), beats_grid, 0.45)
+    # offset 必须与 timeline.ts 完全一致：无片头卡时为 0（首句直接进，不留 2s 空白）；
+    # 有片头卡时先 max(2.0,...)，再吸附到拍（不是"取下一个拍"）
+    offset = 0.0 if intro_frames == 0 else snap(max(2.0, raw_off), beats_grid, 0.45)
 
     shots, scenes_meta = [], []
     cursor = 0.0
@@ -173,7 +174,7 @@ def main() -> int:
     props = {
         "title": script.get("title", ""),
         "kicker": plan.get("kicker"),
-        "titleCard": True,
+        "titleCard": bool(cfg.get("title_card", True)),
         "grainOpacity": plan.get("grain", 0.05),
         "shots": shots,
         "bgm": {"src": f"bgm/{cfg.get('bgm_out', pid + '_bgm')}.mp3", "volume": cfg.get("bgm_volume", 0.72),
